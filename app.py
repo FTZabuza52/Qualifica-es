@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client, Client
-import uuid 
+import uuid
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA
@@ -42,7 +42,7 @@ def init_connection():
 supabase = init_connection()
 
 # ==========================================
-# CABEÇALHO COM O NOVO BRASÃO
+# CABEÇALHO
 # ==========================================
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
@@ -68,6 +68,14 @@ with aba_alvo:
         cpf = st.text_input("CPF")
         faccao = st.selectbox("Facção/Grupo", ["Nenhuma", "CV", "PCC", "Outra"])
         endereco = st.text_input("Endereço Principal")
+        
+        # Novas colunas de coordenadas
+        col_lat, col_lon = st.columns(2)
+        with col_lat:
+            lat_alvo = st.text_input("Latitude (ex: -15.8932)")
+        with col_lon:
+            lon_alvo = st.text_input("Longitude (ex: -52.2599)")
+            
         obs = st.text_area("Observações / Passagens / Tatuagens")
         foto_alvo = st.file_uploader("Fotografia do Alvo", type=["png", "jpg", "jpeg"])
         
@@ -82,7 +90,6 @@ with aba_alvo:
                     try:
                         ext = foto_alvo.name.split('.')[-1]
                         nome_arquivo = f"alvos_{uuid.uuid4()}.{ext}"
-                        # Correção: usar .read() para garantir compatibilidade binária
                         file_bytes = foto_alvo.read()
                         supabase.storage.from_('Fotos').upload(nome_arquivo, file_bytes, {"content-type": foto_alvo.type})
                         url_foto = supabase.storage.from_('Fotos').get_public_url(nome_arquivo)
@@ -92,6 +99,7 @@ with aba_alvo:
                 dados = {
                     "nome": nome, "vulgo": vulgo, "cpf": cpf,
                     "faccao_grupo": faccao, "endereco": endereco,
+                    "latitude": lat_alvo, "longitude": lon_alvo,
                     "observacoes": obs, "caminho_foto": url_foto
                 }
                 supabase.table("dim_pessoas").insert(dados).execute()
@@ -100,11 +108,34 @@ with aba_alvo:
 # ----------------- ABA 2: LOCAIS / FATOS -----------------
 with aba_local:
     st.subheader("Registo de Local ou Denúncia")
+    
+    # 1. Puxa os alvos que já existem no banco para criar o vínculo
+    try:
+        resposta_alvos = supabase.table("dim_pessoas").select("id, nome, vulgo").execute()
+        lista_alvos = resposta_alvos.data
+        # Cria um dicionário para mostrar no ecrã: "Nome (Vulgo)"
+        dicionario_alvos = {f"{a['nome']} ({a['vulgo']})": a['id'] for a in lista_alvos}
+    except:
+        dicionario_alvos = {}
+
     with st.form("form_local", clear_on_submit=True):
         tipo_evento = st.selectbox("Tipo de Registo *", ["Denúncia Biqueira", "Local de Reunião", "Apreensão", "Outro"])
         bairro = st.text_input("Bairro / Rua / Referência *")
+        
+        # Novas colunas de coordenadas
+        col_lat_fato, col_lon_fato = st.columns(2)
+        with col_lat_fato:
+            lat_fato = st.text_input("Latitude (do Local)")
+        with col_lon_fato:
+            lon_fato = st.text_input("Longitude (do Local)")
+
         resumo = st.text_area("Resumo da Denúncia / Observações")
         foto_local = st.file_uploader("Fotografia do Local (Fachada/Muro)", type=["png", "jpg", "jpeg"])
+        
+        # 2. O campo de Inteligência: Relacionamento M:N
+        st.markdown("---")
+        st.write("🔗 **Vincular a Alvos Conhecidos (Opcional)**")
+        alvos_selecionados = st.multiselect("Selecione os indivíduos envolvidos neste fato:", options=list(dicionario_alvos.keys()))
         
         submit_local = st.form_submit_button("Gravar Fato na Base")
 
@@ -117,18 +148,32 @@ with aba_local:
                     try:
                         ext = foto_local.name.split('.')[-1]
                         nome_arquivo = f"locais_{uuid.uuid4()}.{ext}"
-                        # Correção: usar .read()
                         file_bytes = foto_local.read()
                         supabase.storage.from_('Fotos').upload(nome_arquivo, file_bytes, {"content-type": foto_local.type})
                         url_foto_local = supabase.storage.from_('Fotos').get_public_url(nome_arquivo)
                     except Exception as e:
                         st.error(f"Erro ao subir a imagem: {e}")
 
+                # 3. Grava o evento e puxa o ID gerado pelo banco
                 dados_fato = {
                     "tipo_evento": tipo_evento,
                     "bairro_setor": bairro,
+                    "latitude": lat_fato,
+                    "longitude": lon_fato,
                     "resumo_obs": resumo,
                     "caminho_foto": url_foto_local
                 }
-                supabase.table("fato_eventos").insert(dados_fato).execute()
-                st.success("✅ Denúncia / Local registado com sucesso!")
+                
+                # Executa a inserção e captura os dados retornados
+                resposta_fato = supabase.table("fato_eventos").insert(dados_fato).execute()
+                
+                # 4. Criação da Ponte de Vínculos (A mágica do Banco Relacional)
+                if alvos_selecionados and resposta_fato.data:
+                    id_novo_evento = resposta_fato.data[0]['id'] # Pega o ID do evento que acabou de ser criado
+                    
+                    for alvo_nome in alvos_selecionados:
+                        id_do_alvo = dicionario_alvos[alvo_nome]
+                        # Insere o relacionamento na tabela ponte
+                        supabase.table("ponte_vinculos").insert({"id_pessoa": id_do_alvo, "id_evento": id_novo_evento}).execute()
+                        
+                st.success("✅ Fato registado e vinculado com sucesso!")
