@@ -1,13 +1,15 @@
 import streamlit as st
 from supabase import create_client, Client
-import uuid # Para gerar nomes únicos para as fotos
+import uuid 
 
 # ==========================================
-# CONFIGURAÇÕES E CONEXÃO SUPABASE
+# CONFIGURAÇÕES DA PÁGINA
 # ==========================================
-st.set_page_config(page_title="Tático Intel", page_icon="🛡️", layout="centered")
+st.set_page_config(page_title="FT-20 | Informações de Serviço", page_icon="🛡️", layout="centered")
 
-# Mantém o sistema de barreira de senha
+# ==========================================
+# BARREIRA DE SEGURANÇA
+# ==========================================
 def check_password():
     def password_entered():
         if st.session_state["password"] == st.secrets["SENHA_ACESSO"]:
@@ -15,9 +17,11 @@ def check_password():
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
+    
     if st.session_state.get("password_correct", False):
         return True
-    st.markdown("### 🔒 Acesso Restrito - FT20")
+        
+    st.markdown("### 🔒 Acesso Restrito - FT-20")
     st.text_input("Insira a Senha de Acesso:", type="password", on_change=password_entered, key="password")
     if "password_correct" in st.session_state:
         st.error("❌ Senha incorreta. Acesso negado.")
@@ -26,7 +30,9 @@ def check_password():
 if not check_password():
     st.stop()
 
-# Conecta ao Supabase usando as chaves do Cofre (Secrets)
+# ==========================================
+# CONEXÃO SUPABASE
+# ==========================================
 @st.cache_resource
 def init_connection():
     url = st.secrets["SUPABASE_URL"]
@@ -36,11 +42,21 @@ def init_connection():
 supabase = init_connection()
 
 # ==========================================
-# INTERFACE PRINCIPAL
+# CABEÇALHO COM O NOVO BRASÃO
 # ==========================================
-st.title("🛡️ FT20")
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    try:
+        st.image("logo.jpg", use_container_width=True)
+    except:
+        st.warning("A carregar brasão...")
 
-# Criação de duas abas operacionais
+st.markdown("<h2 style='text-align: center;'>Sistema de Informações de Serviço</h2>", unsafe_allow_html=True)
+st.divider()
+
+# ==========================================
+# INTERFACE PRINCIPAL (ABAS)
+# ==========================================
 aba_alvo, aba_local = st.tabs(["👤 Cadastrar Indivíduo", "🏠 Cadastrar Local/Fato"])
 
 # ----------------- ABA 1: PESSOAS -----------------
@@ -62,22 +78,22 @@ with aba_alvo:
                 st.error("O campo Nome é obrigatório!")
             else:
                 url_foto = ""
-                # Lógica de Upload da Foto se existir
                 if foto_alvo:
-                    ext = foto_alvo.name.split('.')[-1]
-                    nome_arquivo = f"alvos_{uuid.uuid4()}.{ext}" # Gera um nome único
-                    # Faz o upload para o bucket 'fotos_alvos'
-                    supabase.storage.from_('fotos_alvos').upload(nome_arquivo, foto_alvo.getvalue(), {"content-type": foto_alvo.type})
-                    # Pega o link público da imagem
-                    url_foto = supabase.storage.from_('fotos_alvos').get_public_url(nome_arquivo)
+                    try:
+                        ext = foto_alvo.name.split('.')[-1]
+                        nome_arquivo = f"alvos_{uuid.uuid4()}.{ext}"
+                        # Correção: usar .read() para garantir compatibilidade binária
+                        file_bytes = foto_alvo.read()
+                        supabase.storage.from_('fotos_alvos').upload(nome_arquivo, file_bytes, {"content-type": foto_alvo.type})
+                        url_foto = supabase.storage.from_('fotos_alvos').get_public_url(nome_arquivo)
+                    except Exception as e:
+                        st.error(f"Erro ao subir a imagem: {e}")
 
-                # Estrutura os dados para o banco
                 dados = {
                     "nome": nome, "vulgo": vulgo, "cpf": cpf,
                     "faccao_grupo": faccao, "endereco": endereco,
                     "observacoes": obs, "caminho_foto": url_foto
                 }
-                # Insere na tabela
                 supabase.table("dim_pessoas").insert(dados).execute()
                 st.success(f"✅ Alvo '{nome}' registado com sucesso!")
 
@@ -98,10 +114,15 @@ with aba_local:
             else:
                 url_foto_local = ""
                 if foto_local:
-                    ext = foto_local.name.split('.')[-1]
-                    nome_arquivo = f"locais_{uuid.uuid4()}.{ext}"
-                    supabase.storage.from_('fotos_alvos').upload(nome_arquivo, foto_local.getvalue(), {"content-type": foto_local.type})
-                    url_foto_local = supabase.storage.from_('fotos_alvos').get_public_url(nome_arquivo)
+                    try:
+                        ext = foto_local.name.split('.')[-1]
+                        nome_arquivo = f"locais_{uuid.uuid4()}.{ext}"
+                        # Correção: usar .read()
+                        file_bytes = foto_local.read()
+                        supabase.storage.from_('fotos_alvos').upload(nome_arquivo, file_bytes, {"content-type": foto_local.type})
+                        url_foto_local = supabase.storage.from_('fotos_alvos').get_public_url(nome_arquivo)
+                    except Exception as e:
+                        st.error(f"Erro ao subir a imagem: {e}")
 
                 dados_fato = {
                     "tipo_evento": tipo_evento,
