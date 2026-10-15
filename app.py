@@ -42,7 +42,6 @@ def init_connection():
 supabase = init_connection()
 
 def extrair_coordenadas(texto_coords):
-    """Fatia a string do Google Maps em Latitude e Longitude"""
     lat, lon = "", ""
     if texto_coords:
         if "," in texto_coords:
@@ -50,7 +49,7 @@ def extrair_coordenadas(texto_coords):
             lat = partes[0].strip()
             lon = partes[1].strip()
         else:
-            lat = texto_coords.strip() # Se não tiver vírgula, salva tudo na lat por segurança
+            lat = texto_coords.strip()
     return lat, lon
 
 # ==========================================
@@ -81,9 +80,7 @@ with aba_alvo:
         faccao = st.selectbox("Facção/Grupo", ["Nenhuma", "CV", "PCC", "Outra"])
         endereco = st.text_input("Endereço Principal")
         
-        # Campo único para o Google Maps
         coordenadas_alvo = st.text_input("Coordenadas (Cole do Google Maps, ex: -15.8932, -52.2599)")
-            
         obs = st.text_area("Observações / Passagens / Tatuagens")
         foto_alvo = st.file_uploader("Fotografia do Alvo", type=["png", "jpg", "jpeg"])
         
@@ -104,7 +101,6 @@ with aba_alvo:
                     except Exception as e:
                         st.error(f"Erro ao subir a imagem: {e}")
 
-                # Separa as coordenadas antes de enviar para o banco
                 lat_alvo, lon_alvo = extrair_coordenadas(coordenadas_alvo)
 
                 dados = {
@@ -120,20 +116,23 @@ with aba_alvo:
 with aba_local:
     st.subheader("Registo de Local ou Denúncia")
     
+    # Sistema defensivo para puxar os alvos (Tenta id_pessoa, se falhar tenta id)
     try:
-        resposta_alvos = supabase.table("dim_pessoas").select("id, nome, vulgo").execute()
+        resposta_alvos = supabase.table("dim_pessoas").select("id_pessoa, nome, vulgo").execute()
         lista_alvos = resposta_alvos.data
-        dicionario_alvos = {f"{a['nome']} ({a['vulgo']})": a['id'] for a in lista_alvos}
+        dicionario_alvos = {f"{a['nome']} ({a['vulgo']})": a['id_pessoa'] for a in lista_alvos}
     except:
-        dicionario_alvos = {}
+        try:
+            resposta_alvos = supabase.table("dim_pessoas").select("id, nome, vulgo").execute()
+            lista_alvos = resposta_alvos.data
+            dicionario_alvos = {f"{a['nome']} ({a['vulgo']})": a['id'] for a in lista_alvos}
+        except:
+            dicionario_alvos = {}
 
     with st.form("form_local", clear_on_submit=True):
         tipo_evento = st.selectbox("Tipo de Registo *", ["Denúncia Biqueira", "Local de Reunião", "Apreensão", "Outro"])
         bairro = st.text_input("Bairro / Rua / Referência *")
-        
-        # Campo único para o Google Maps
         coordenadas_fato = st.text_input("Coordenadas (Cole do Google Maps, ex: -15.8932, -52.2599)")
-
         resumo = st.text_area("Resumo da Denúncia / Observações")
         foto_local = st.file_uploader("Fotografia do Local (Fachada/Muro)", type=["png", "jpg", "jpeg"])
         
@@ -158,7 +157,6 @@ with aba_local:
                     except Exception as e:
                         st.error(f"Erro ao subir a imagem: {e}")
 
-                # Separa as coordenadas antes de enviar para o banco
                 lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
 
                 dados_fato = {
@@ -170,13 +168,17 @@ with aba_local:
                     "caminho_foto": url_foto_local
                 }
                 
-                resposta_fato = supabase.table("fato_eventos").insert(dados_fato).execute()
-                
-                if alvos_selecionados and resposta_fato.data:
-                    id_novo_evento = resposta_fato.data[0]['id']
+                try:
+                    resposta_fato = supabase.table("fato_eventos").insert(dados_fato).execute()
                     
-                    for alvo_nome in alvos_selecionados:
-                        id_do_alvo = dicionario_alvos[alvo_nome]
-                        supabase.table("ponte_vinculos").insert({"id_pessoa": id_do_alvo, "id_evento": id_novo_evento}).execute()
+                    if alvos_selecionados and resposta_fato.data:
+                        # Defesa: puxa o ID independentemente de ser id_evento ou id
+                        id_novo_evento = resposta_fato.data[0].get('id_evento') or resposta_fato.data[0].get('id')
                         
-                st.success("✅ Fato registado e vinculado com sucesso!")
+                        for alvo_nome in alvos_selecionados:
+                            id_do_alvo = dicionario_alvos[alvo_nome]
+                            supabase.table("ponte_vinculos").insert({"id_pessoa": id_do_alvo, "id_evento": id_novo_evento}).execute()
+                            
+                    st.success("✅ Fato registado e vinculado com sucesso!")
+                except Exception as e:
+                    st.error(f"❌ ERRO NO BANCO: {e}")
