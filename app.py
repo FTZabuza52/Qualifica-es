@@ -31,7 +31,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# CONEXÃO SUPABASE
+# CONEXÃO SUPABASE E FUNÇÕES AUXILIARES
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -40,6 +40,18 @@ def init_connection():
     return create_client(url, key)
 
 supabase = init_connection()
+
+def extrair_coordenadas(texto_coords):
+    """Fatia a string do Google Maps em Latitude e Longitude"""
+    lat, lon = "", ""
+    if texto_coords:
+        if "," in texto_coords:
+            partes = texto_coords.split(",")
+            lat = partes[0].strip()
+            lon = partes[1].strip()
+        else:
+            lat = texto_coords.strip() # Se não tiver vírgula, salva tudo na lat por segurança
+    return lat, lon
 
 # ==========================================
 # CABEÇALHO
@@ -69,12 +81,8 @@ with aba_alvo:
         faccao = st.selectbox("Facção/Grupo", ["Nenhuma", "CV", "PCC", "Outra"])
         endereco = st.text_input("Endereço Principal")
         
-        # Novas colunas de coordenadas
-        col_lat, col_lon = st.columns(2)
-        with col_lat:
-            lat_alvo = st.text_input("Latitude (ex: -15.8932)")
-        with col_lon:
-            lon_alvo = st.text_input("Longitude (ex: -52.2599)")
+        # Campo único para o Google Maps
+        coordenadas_alvo = st.text_input("Coordenadas (Cole do Google Maps, ex: -15.8932, -52.2599)")
             
         obs = st.text_area("Observações / Passagens / Tatuagens")
         foto_alvo = st.file_uploader("Fotografia do Alvo", type=["png", "jpg", "jpeg"])
@@ -96,6 +104,9 @@ with aba_alvo:
                     except Exception as e:
                         st.error(f"Erro ao subir a imagem: {e}")
 
+                # Separa as coordenadas antes de enviar para o banco
+                lat_alvo, lon_alvo = extrair_coordenadas(coordenadas_alvo)
+
                 dados = {
                     "nome": nome, "vulgo": vulgo, "cpf": cpf,
                     "faccao_grupo": faccao, "endereco": endereco,
@@ -109,11 +120,9 @@ with aba_alvo:
 with aba_local:
     st.subheader("Registo de Local ou Denúncia")
     
-    # 1. Puxa os alvos que já existem no banco para criar o vínculo
     try:
         resposta_alvos = supabase.table("dim_pessoas").select("id, nome, vulgo").execute()
         lista_alvos = resposta_alvos.data
-        # Cria um dicionário para mostrar no ecrã: "Nome (Vulgo)"
         dicionario_alvos = {f"{a['nome']} ({a['vulgo']})": a['id'] for a in lista_alvos}
     except:
         dicionario_alvos = {}
@@ -122,17 +131,12 @@ with aba_local:
         tipo_evento = st.selectbox("Tipo de Registo *", ["Denúncia Biqueira", "Local de Reunião", "Apreensão", "Outro"])
         bairro = st.text_input("Bairro / Rua / Referência *")
         
-        # Novas colunas de coordenadas
-        col_lat_fato, col_lon_fato = st.columns(2)
-        with col_lat_fato:
-            lat_fato = st.text_input("Latitude (do Local)")
-        with col_lon_fato:
-            lon_fato = st.text_input("Longitude (do Local)")
+        # Campo único para o Google Maps
+        coordenadas_fato = st.text_input("Coordenadas (Cole do Google Maps, ex: -15.8932, -52.2599)")
 
         resumo = st.text_area("Resumo da Denúncia / Observações")
         foto_local = st.file_uploader("Fotografia do Local (Fachada/Muro)", type=["png", "jpg", "jpeg"])
         
-        # 2. O campo de Inteligência: Relacionamento M:N
         st.markdown("---")
         st.write("🔗 **Vincular a Alvos Conhecidos (Opcional)**")
         alvos_selecionados = st.multiselect("Selecione os indivíduos envolvidos neste fato:", options=list(dicionario_alvos.keys()))
@@ -154,7 +158,9 @@ with aba_local:
                     except Exception as e:
                         st.error(f"Erro ao subir a imagem: {e}")
 
-                # 3. Grava o evento e puxa o ID gerado pelo banco
+                # Separa as coordenadas antes de enviar para o banco
+                lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
+
                 dados_fato = {
                     "tipo_evento": tipo_evento,
                     "bairro_setor": bairro,
@@ -164,16 +170,13 @@ with aba_local:
                     "caminho_foto": url_foto_local
                 }
                 
-                # Executa a inserção e captura os dados retornados
                 resposta_fato = supabase.table("fato_eventos").insert(dados_fato).execute()
                 
-                # 4. Criação da Ponte de Vínculos (A mágica do Banco Relacional)
                 if alvos_selecionados and resposta_fato.data:
-                    id_novo_evento = resposta_fato.data[0]['id'] # Pega o ID do evento que acabou de ser criado
+                    id_novo_evento = resposta_fato.data[0]['id']
                     
                     for alvo_nome in alvos_selecionados:
                         id_do_alvo = dicionario_alvos[alvo_nome]
-                        # Insere o relacionamento na tabela ponte
                         supabase.table("ponte_vinculos").insert({"id_pessoa": id_do_alvo, "id_evento": id_novo_evento}).execute()
                         
                 st.success("✅ Fato registado e vinculado com sucesso!")
