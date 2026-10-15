@@ -84,8 +84,8 @@ with aba_alvo:
                         nome_arquivo = f"alvos_{uuid.uuid4()}.{ext}"
                         # Correção: usar .read() para garantir compatibilidade binária
                         file_bytes = foto_alvo.read()
-                        supabase.storage.from_('fotos_alvos').upload(nome_arquivo, file_bytes, {"content-type": foto_alvo.type})
-                        url_foto = supabase.storage.from_('fotos_alvos').get_public_url(nome_arquivo)
+                        supabase.storage.from_('Fotos').upload(nome_arquivo, file_bytes, {"content-type": foto_alvo.type})
+                        url_foto = supabase.storage.from_('Fotos').get_public_url(nome_arquivo)
                     except Exception as e:
                         st.error(f"Erro ao subir a imagem: {e}")
 
@@ -119,8 +119,8 @@ with aba_local:
                         nome_arquivo = f"locais_{uuid.uuid4()}.{ext}"
                         # Correção: usar .read()
                         file_bytes = foto_local.read()
-                        supabase.storage.from_('fotos_alvos').upload(nome_arquivo, file_bytes, {"content-type": foto_local.type})
-                        url_foto_local = supabase.storage.from_('fotos_alvos').get_public_url(nome_arquivo)
+                        supabase.storage.from_('Fotos').upload(nome_arquivo, file_bytes, {"content-type": foto_local.type})
+                        url_foto_local = supabase.storage.from_('Fotos').get_public_url(nome_arquivo)
                     except Exception as e:
                         st.error(f"Erro ao subir a imagem: {e}")
 
