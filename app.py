@@ -110,7 +110,9 @@ with aba_alvo:
         st.markdown("### Características e Mídia")
         tatuagens = st.text_area("Tatuagens e Sinais (Descreva detalhes)")
         obs = st.text_area("Observações Gerais")
-        foto_alvo = st.file_uploader("Fotografia do Alvo (Rosto/Tatuagens)", type=["png", "jpg", "jpeg"])
+        
+        # UPLOAD MÚLTIPLO LIBERADO AQUI
+        fotos_alvo = st.file_uploader("Fotografias do Alvo (Pode selecionar várias)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         st.markdown("---")
         st.write("🔗 **Vínculos Múltiplos**")
@@ -118,19 +120,22 @@ with aba_alvo:
         v_veiculos = st.multiselect("Vincular a Veículos:", list(dic_veiculos.keys()), key="alvo_veiculos")
         
         if st.form_submit_button("Gravar Alvo"):
-            url_foto = ""
-            if foto_alvo:
-                ext = foto_alvo.name.split('.')[-1]
-                nome_arq = f"alvos_{uuid.uuid4()}.{ext}"
-                supabase.storage.from_('Fotos').upload(nome_arq, foto_alvo.read(), {"content-type": foto_alvo.type})
-                url_foto = supabase.storage.from_('Fotos').get_public_url(nome_arq)
+            # Lógica para subir múltiplas fotos e salvar os links separados por vírgula
+            urls_fotos = []
+            if fotos_alvo:
+                for foto in fotos_alvo:
+                    ext = foto.name.split('.')[-1]
+                    nome_arq = f"alvos_{uuid.uuid4()}.{ext}"
+                    supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                    urls_fotos.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
+            url_foto_final = ", ".join(urls_fotos)
 
             lat_alvo, lon_alvo = extrair_coordenadas(coordenadas_alvo)
             dados = {
                 "nome": nome, "vulgo": vulgo, "nome_mae": nome_mae, 
                 "data_nascimento": data_nascimento, "cpf": cpf, 
                 "endereco": endereco, "latitude": lat_alvo, "longitude": lon_alvo, 
-                "tatuagens_sinais": tatuagens, "observacoes": obs, "caminho_foto": url_foto
+                "tatuagens_sinais": tatuagens, "observacoes": obs, "caminho_foto": url_foto_final
             }
             
             try:
@@ -149,42 +154,49 @@ with aba_local:
     with st.form("form_local", clear_on_submit=True):
         st.markdown("### Registo do Evento / Local")
         
+        # ADICIONADO "Visto/Abordado"
         lista_eventos = [
-            "LTD", "MP ATIVO", "Casa bomba", "Indivíduo Armado", 
-            "Abordagem", "Veículo com queixa de roubo ou furto", 
-            "Veículo usado em Crime", "Lideranças/Disciplina", "Ponto de Salves", "Outro"
+            "Visto/Abordado", "LTD", "MP ATIVO", "Casa bomba", "Indivíduo Armado", 
+            "Veículo com queixa de roubo ou furto", "Veículo usado em Crime", 
+            "Lideranças/Disciplina", "Ponto de Salves", "Outro"
         ]
         tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
         
         bairro = st.text_input("Bairro / Setor")
         coordenadas_fato = st.text_input("Coordenadas Exatas (Lat, Lon do Maps)")
         resumo = st.text_area("Detalhes da Patrulha (Resumo do que foi avistado/apreendido)")
-        foto_local = st.file_uploader("Fotografia do Local ou Abordagem (Placa/Alvo)", type=["png", "jpg", "jpeg"])
+        
+        # UPLOAD MÚLTIPLO LIBERADO AQUI
+        fotos_local = st.file_uploader("Fotografias do Local ou Abordagem (Pode selecionar várias)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         st.markdown("---")
         st.write("🔗 **Vínculos Múltiplos**")
-        v_alvos = st.multiselect("Vincular a Indivíduos (Ex: Quem foi abordado ou alvo do MP):", list(dic_alvos.keys()), key="fato_alvos")
-        v_veic_fato = st.multiselect("Vincular a Veículos (Ex: Veículo apreendido/avistado):", list(dic_veiculos.keys()), key="fato_veic")
+        v_alvos = st.multiselect("Vincular a Indivíduos (Ex: Quem foi visto junto):", list(dic_alvos.keys()), key="fato_alvos")
+        v_veic_fato = st.multiselect("Vincular a Veículos (Ex: Veículos no local):", list(dic_veiculos.keys()), key="fato_veic")
         
         if st.form_submit_button("Gravar Evento"):
-            url_foto_local = ""
-            if foto_local:
-                ext = foto_local.name.split('.')[-1]
-                nome_arq = f"locais_{uuid.uuid4()}.{ext}"
-                supabase.storage.from_('Fotos').upload(nome_arq, foto_local.read(), {"content-type": foto_local.type})
-                url_foto_local = supabase.storage.from_('Fotos').get_public_url(nome_arq)
+            # Lógica para subir múltiplas fotos do evento
+            urls_fotos_local = []
+            if fotos_local:
+                for foto in fotos_local:
+                    ext = foto.name.split('.')[-1]
+                    nome_arq = f"locais_{uuid.uuid4()}.{ext}"
+                    supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                    urls_fotos_local.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
+            url_foto_local_final = ", ".join(urls_fotos_local)
 
             lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
             dados_fato = {
                 "tipo_evento": tipo_evento, "bairro_setor": bairro, 
                 "latitude": lat_fato, "longitude": lon_fato, 
-                "resumo_obs": resumo, "caminho_foto": url_foto_local
+                "resumo_obs": resumo, "caminho_foto": url_foto_local_final
             }
             
             try:
                 res = supabase.table("fato_eventos").insert(dados_fato).execute()
                 if res.data:
                     id_novo = res.data[0].get('id_evento')
+                    # Aqui a mágica do vínculo acontece (Múltiplos alvos e múltiplos carros para o mesmo evento)
                     for a in v_alvos:
                         supabase.table("ponte_vinculos").insert({"id_pessoa": dic_alvos[a], "id_evento": id_novo}).execute()
                     for v in v_veic_fato:
@@ -217,10 +229,9 @@ with aba_veiculo:
         v_fatos_veic = st.multiselect("Vincular a Fatos (Localizado/Apreendido em):", list(dic_fatos.keys()), key="veic_fatos")
         
         if st.form_submit_button("Gravar Veículo"):
-            # Junta o Tipo com a Marca para salvar no banco como "Moto - Honda CG 160"
             tipo_final = f"{tipo_basico} - {marca_modelo}" if marca_modelo else tipo_basico
-            
             dados_veic = {"tipo": tipo_final, "cor": cor, "placa": placa, "caracteristicas": caracteristicas}
+            
             try:
                 res = supabase.table("dim_veiculos").insert(dados_veic).execute()
                 if res.data:
