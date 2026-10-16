@@ -196,3 +196,153 @@ with aba_local:
                     supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
                     urls_fotos_local.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
             url_foto_local_final = ", ".join(urls_fotos_local)
+
+            lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
+            dados_fato = {"tipo_evento": tipo_evento, "bairro_setor": bairro, "latitude": lat_fato, "longitude": lon_fato, "resumo_obs": resumo, "caminho_foto": url_foto_local_final}
+            
+            try:
+                res = supabase.table("fato_eventos").insert(dados_fato).execute()
+                if res.data:
+                    id_novo = res.data[0].get('id_evento')
+                    for a in v_alvos: supabase.table("ponte_vinculos").insert({"id_pessoa": dic_alvos[a], "id_evento": id_novo}).execute()
+                    for v in v_veic_fato: supabase.table("ponte_fatos_veiculos").insert({"id_evento": id_novo, "id_veiculo": dic_veiculos[v]}).execute()
+                st.success("✅ Evento gravado com sucesso!")
+            except Exception as e: st.error(f"❌ Erro: {e}")
+
+# ----------------- ABA 3: VEÍCULOS -----------------
+with aba_veiculo:
+    with st.form("form_veiculo", clear_on_submit=True):
+        st.markdown("### Registo de Veículo")
+        col_tipo, col_marca = st.columns(2)
+        with col_tipo: tipo_basico = st.selectbox("Tipo", ["Carro", "Moto", "Caminhonete", "Caminhão", "Outro"])
+        with col_marca: marca_modelo = st.text_input("Marca/Modelo")
+            
+        col_cor, col_placa = st.columns(2)
+        with col_cor: cor = st.text_input("Cor Predominante")
+        with col_placa: placa = st.text_input("Placa")
+            
+        caracteristicas = st.text_area("Características Marcantes")
+        
+        st.markdown("---")
+        v_alvos_veic = st.multiselect("Vincular a Indivíduos:", list(dic_alvos.keys()), key="veic_alvos")
+        v_fatos_veic = st.multiselect("Vincular a Fatos:", list(dic_fatos.keys()), key="veic_fatos")
+        
+        if st.form_submit_button("Gravar Veículo"):
+            tipo_final = f"{tipo_basico} - {marca_modelo}" if marca_modelo else tipo_basico
+            dados_veic = {"tipo": tipo_final, "cor": cor, "placa": placa, "caracteristicas": caracteristicas}
+            
+            try:
+                res = supabase.table("dim_veiculos").insert(dados_veic).execute()
+                if res.data:
+                    id_novo = res.data[0].get('id_veiculo')
+                    for a in v_alvos_veic: supabase.table("ponte_pessoas_veiculos").insert({"id_pessoa": dic_alvos[a], "id_veiculo": id_novo}).execute()
+                    for f in v_fatos_veic: supabase.table("ponte_fatos_veiculos").insert({"id_evento": dic_fatos[f], "id_veiculo": id_novo}).execute()
+                st.success("✅ Veículo gravado com sucesso!")
+            except Exception as e: st.error(f"❌ Erro: {e}")
+
+# ----------------- ABA 4: GESTÃO E AUDITORIA -----------------
+with aba_gestao:
+    st.markdown("### ⚙️ Painel de Controle de Dados")
+    st.info("Aqui você altera informações existentes ou apaga registros. Apagar um registro destrói automaticamente as fotos no servidor.")
+    
+    tabela_alvo = st.radio("Selecione o banco de dados:", ["👤 Pessoas", "🏠 Fatos", "🚗 Veículos"], horizontal=True)
+
+    # LÓGICA DE GESTÃO PARA PESSOAS
+    if tabela_alvo == "👤 Pessoas":
+        if not dic_alvos:
+            st.warning("Nenhum indivíduo cadastrado.")
+        else:
+            alvo_selecionado = st.selectbox("Selecione o alvo para gerenciar:", [""] + list(dic_alvos.keys()))
+            if alvo_selecionado:
+                id_p = dic_alvos[alvo_selecionado]
+                # Puxa o dicionário completo do alvo selecionado
+                dados_alvo = next(item for item in lista_alvos_bruta if item["id_pessoa"] == id_p)
+                
+                with st.form("form_upd_pessoa"):
+                    st.markdown(f"**Editando: {dados_alvo.get('nome')}**")
+                    up_nome = st.text_input("Nome", value=dados_alvo.get('nome') or "")
+                    up_vulgo = st.text_input("Vulgo", value=dados_alvo.get('vulgo') or "")
+                    up_cpf = st.text_input("CPF", value=dados_alvo.get('cpf') or "")
+                    up_status = st.text_input("Status Mandado", value=dados_alvo.get('status_mandado') or "")
+                    up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
+                    
+                    if st.form_submit_button("🔄 Salvar Alterações"):
+                        try:
+                            supabase.table("dim_pessoas").update({
+                                "nome": up_nome, "vulgo": up_vulgo, "cpf": up_cpf, 
+                                "status_mandado": up_status, "tatuagens_sinais": up_tattoo
+                            }).eq("id_pessoa", id_p).execute()
+                            st.success("✅ Dados atualizados!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Erro: {e}")
+
+                st.markdown("---")
+                if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
+                    apagar_fotos_bucket(dados_alvo.get('caminho_foto'))
+                    supabase.table("dim_pessoas").delete().eq("id_pessoa", id_p).execute()
+                    st.success("💀 Alvo e mídias erradicados da base.")
+                    st.rerun()
+
+    # LÓGICA DE GESTÃO PARA FATOS
+    elif tabela_alvo == "🏠 Fatos":
+        if not dic_fatos:
+            st.warning("Nenhum evento cadastrado.")
+        else:
+            fato_selecionado = st.selectbox("Selecione o evento para gerenciar:", [""] + list(dic_fatos.keys()))
+            if fato_selecionado:
+                id_f = dic_fatos[fato_selecionado]
+                dados_fato = next(item for item in lista_fatos_bruta if item["id_evento"] == id_f)
+                
+                with st.form("form_upd_fato"):
+                    st.markdown(f"**Editando Evento ID: {id_f}**")
+                    up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
+                    up_bairro = st.text_input("Bairro", value=dados_fato.get('bairro_setor') or "")
+                    up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
+                    
+                    if st.form_submit_button("🔄 Salvar Alterações"):
+                        try:
+                            supabase.table("fato_eventos").update({
+                                "tipo_evento": up_tipo, "bairro_setor": up_bairro, "resumo_obs": up_resumo
+                            }).eq("id_evento", id_f).execute()
+                            st.success("✅ Dados atualizados!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Erro: {e}")
+
+                st.markdown("---")
+                if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
+                    apagar_fotos_bucket(dados_fato.get('caminho_foto'))
+                    supabase.table("fato_eventos").delete().eq("id_evento", id_f).execute()
+                    st.success("💀 Evento e mídias erradicados da base.")
+                    st.rerun()
+
+    # LÓGICA DE GESTÃO PARA VEÍCULOS
+    elif tabela_alvo == "🚗 Veículos":
+        if not dic_veiculos:
+            st.warning("Nenhum veículo cadastrado.")
+        else:
+            veic_selecionado = st.selectbox("Selecione o veículo para gerenciar:", [""] + list(dic_veiculos.keys()))
+            if veic_selecionado:
+                id_v = dic_veiculos[veic_selecionado]
+                dados_veic = next(item for item in lista_veiculos_bruta if item["id_veiculo"] == id_v)
+                
+                with st.form("form_upd_veic"):
+                    st.markdown(f"**Editando Veículo: {dados_veic.get('placa')}**")
+                    up_tipo_v = st.text_input("Tipo/Modelo", value=dados_veic.get('tipo') or "")
+                    up_cor_v = st.text_input("Cor", value=dados_veic.get('cor') or "")
+                    up_placa_v = st.text_input("Placa", value=dados_veic.get('placa') or "")
+                    up_carac_v = st.text_area("Características", value=dados_veic.get('caracteristicas') or "")
+                    
+                    if st.form_submit_button("🔄 Salvar Alterações"):
+                        try:
+                            supabase.table("dim_veiculos").update({
+                                "tipo": up_tipo_v, "cor": up_cor_v, "placa": up_placa_v, "caracteristicas": up_carac_v
+                            }).eq("id_veiculo", id_v).execute()
+                            st.success("✅ Dados atualizados!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Erro: {e}")
+
+                st.markdown("---")
+                if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
+                    supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
+                    st.success("💀 Veículo erradicado da base.")
+                    st.rerun()
