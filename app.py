@@ -190,7 +190,6 @@ with aba_local:
         with col_tipo_fato:
             tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
         with col_data_fato:
-            # ADICIONADO: Campo de Data (padrão é hoje)
             data_evento = st.date_input("Data do Evento")
             
         bairro = st.text_input("Bairro / Setor")
@@ -212,7 +211,6 @@ with aba_local:
             url_foto_local_final = ", ".join(urls_fotos_local)
             lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
             
-            # ADICIONADO: Enviando a data selecionada para o banco
             dados_fato = {
                 "tipo_evento": tipo_evento, 
                 "data_hora": data_evento.isoformat(), 
@@ -286,6 +284,7 @@ with aba_gestao:
                         up_coords = st.text_input("Localização do Endereço (Lat, Lon)", value=f"{lat_a}, {lon_a}" if lat_a and lon_a else "")
                         up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
                         up_obs = st.text_area("Observações Gerais / Passagens", value=dados_alvo.get('observacoes') or "")
+                        
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 lat_nova, lon_nova = extrair_coordenadas(up_coords)
@@ -297,8 +296,9 @@ with aba_gestao:
                                 st.success("✅ Dados de qualificação atualizados!")
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
+                    
                     st.markdown("---")
-                  if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
+                    if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_alvo.get('caminho_foto'))
                         # Desamarra a teia primeiro
                         supabase.table("ponte_vinculos").delete().eq("id_pessoa", id_p).execute()
@@ -335,7 +335,7 @@ with aba_gestao:
                         
                         col_up_t, col_up_d = st.columns(2)
                         with col_up_t:
-                            up_tipo = text_input_obj = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
+                            up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
                             
                         # Tratamento para exibir a data atual na edição
                         data_str = dados_fato.get('data_hora')
@@ -364,8 +364,9 @@ with aba_gestao:
                                 st.success("✅ Dados atualizados!")
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
+                    
                     st.markdown("---")
-                   if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
+                    if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_fato.get('caminho_foto'))
                         # Desamarra a teia primeiro
                         supabase.table("ponte_vinculos").delete().eq("id_evento", id_f).execute()
@@ -374,6 +375,7 @@ with aba_gestao:
                         supabase.table("fato_eventos").delete().eq("id_evento", id_f).execute()
                         st.success("💀 Evento e mídias erradicados da base.")
                         st.rerun()
+
     elif tabela_alvo == "🚗 Veículos":
         opcoes_veiculos = list(dic_veiculos.keys())
         if len(opcoes_veiculos) == 0:
@@ -390,6 +392,7 @@ with aba_gestao:
                         up_cor_v = st.text_input("Cor", value=dados_veic.get('cor') or "")
                         up_placa_v = st.text_input("Placa", value=dados_veic.get('placa') or "")
                         up_carac_v = st.text_area("Características", value=dados_veic.get('caracteristicas') or "")
+                        
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 supabase.table("dim_veiculos").update({
@@ -398,8 +401,9 @@ with aba_gestao:
                                 st.success("✅ Dados atualizados!")
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
+                    
                     st.markdown("---")
-                   if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
+                    if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
                         # Desamarra a teia primeiro
                         supabase.table("ponte_pessoas_veiculos").delete().eq("id_veiculo", id_v).execute()
                         supabase.table("ponte_fatos_veiculos").delete().eq("id_veiculo", id_v).execute()
