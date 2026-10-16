@@ -286,7 +286,7 @@ with aba_gestao:
     
     tabela_alvo = st.radio("Selecione o banco de dados:", ["👤 Pessoas", "🏠 Fatos", "🚗 Veículos"], horizontal=True)
 
-    if tabela_alvo == "👤 Pessoas":
+   if tabela_alvo == "👤 Pessoas":
         opcoes_alvos = list(dic_alvos.keys())
         if len(opcoes_alvos) == 0:
             st.warning("Nenhum indivíduo cadastrado.")
@@ -298,20 +298,48 @@ with aba_gestao:
                 
                 if dados_alvo:
                     with st.form("form_upd_pessoa"):
-                        st.markdown(f"**Editando: {dados_alvo.get('nome')}**")
+                        st.markdown(f"**Editando Ficha Completa: {dados_alvo.get('nome')}**")
+                        
                         up_nome = st.text_input("Nome", value=dados_alvo.get('nome') or "")
                         up_vulgo = st.text_input("Vulgo", value=dados_alvo.get('vulgo') or "")
+                        
+                        col_mae, col_nasc = st.columns(2)
+                        with col_mae: 
+                            up_mae = st.text_input("Nome da Mãe", value=dados_alvo.get('nome_mae') or "")
+                        with col_nasc: 
+                            up_nasc = st.text_input("Data de Nascimento", value=dados_alvo.get('data_nascimento') or "")
+                            
                         up_cpf = st.text_input("CPF", value=dados_alvo.get('cpf') or "")
+                        up_endereco = st.text_input("Endereço Residencial", value=dados_alvo.get('endereco') or "")
+                        
+                        # Reconstrói a coordenada para exibição
+                        lat_atual = dados_alvo.get('latitude') or ""
+                        lon_atual = dados_alvo.get('longitude') or ""
+                        coords_atuais = f"{lat_atual}, {lon_atual}" if lat_atual and lon_atual else ""
+                        up_coords = st.text_input("Localização do Endereço (Lat, Lon)", value=coords_atuais)
+                        
                         up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
+                        up_obs = st.text_area("Observações Gerais", value=dados_alvo.get('observacoes') or "")
                         
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
+                                lat_nova, lon_nova = extrair_coordenadas(up_coords)
+                                
                                 supabase.table("dim_pessoas").update({
-                                    "nome": up_nome, "vulgo": up_vulgo, "cpf": up_cpf, "tatuagens_sinais": up_tattoo
+                                    "nome": up_nome, 
+                                    "vulgo": up_vulgo, 
+                                    "nome_mae": up_mae,
+                                    "data_nascimento": up_nasc,
+                                    "cpf": up_cpf, 
+                                    "endereco": up_endereco,
+                                    "latitude": lat_nova,
+                                    "longitude": lon_nova,
+                                    "tatuagens_sinais": up_tattoo,
+                                    "observacoes": up_obs
                                 }).eq("id_pessoa", id_p).execute()
-                                st.success("✅ Dados atualizados!")
+                                st.success("✅ Dados de qualificação atualizados!")
                                 st.rerun()
-                            except Exception as e: st.error(f"Erro: {e}")
+                            except Exception as e: st.error(f"Erro ao salvar: {e}")
 
                     st.markdown("---")
                     if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
