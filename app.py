@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 import uuid
+from datetime import datetime, date
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA
@@ -184,7 +185,14 @@ with aba_local:
     with st.form("form_local", clear_on_submit=True):
         st.markdown("### Registo do Evento")
         lista_eventos = ["Abordagem", "Visto/Abordado", "LTD", "MP ATIVO", "Casa bomba", "Indivíduo Armado", "Veículo com queixa de roubo", "Veículo usado em Crime", "Lideranças/Disciplina", "Ponto de Salves", "Outro"]
-        tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
+        
+        col_tipo_fato, col_data_fato = st.columns(2)
+        with col_tipo_fato:
+            tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
+        with col_data_fato:
+            # ADICIONADO: Campo de Data (padrão é hoje)
+            data_evento = st.date_input("Data do Evento")
+            
         bairro = st.text_input("Bairro / Setor")
         coordenadas_fato = st.text_input("Coordenadas Exatas (Lat, Lon)")
         resumo = st.text_area("Detalhes da Patrulha")
@@ -203,7 +211,17 @@ with aba_local:
                     urls_fotos_local.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
             url_foto_local_final = ", ".join(urls_fotos_local)
             lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
-            dados_fato = {"tipo_evento": tipo_evento, "bairro_setor": bairro, "latitude": lat_fato, "longitude": lon_fato, "resumo_obs": resumo, "caminho_foto": url_foto_local_final}
+            
+            # ADICIONADO: Enviando a data selecionada para o banco
+            dados_fato = {
+                "tipo_evento": tipo_evento, 
+                "data_hora": data_evento.isoformat(), 
+                "bairro_setor": bairro, 
+                "latitude": lat_fato, 
+                "longitude": lon_fato, 
+                "resumo_obs": resumo, 
+                "caminho_foto": url_foto_local_final
+            }
             try:
                 res = supabase.table("fato_eventos").insert(dados_fato).execute()
                 if res.data:
@@ -298,13 +316,46 @@ with aba_gestao:
                 if dados_fato:
                     with st.form("form_upd_fato"):
                         st.markdown(f"**Editando o Fato Selecionado**")
-                        up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
+                        
+                        try:
+                            links = supabase.table("ponte_vinculos").select("id_pessoa").eq("id_evento", id_f).execute()
+                            ids_p = [l['id_pessoa'] for l in (links.data or [])]
+                            nomes_vinc = []
+                            for pid in ids_p:
+                                p_data = supabase.table("dim_pessoas").select("nome, vulgo").eq("id_pessoa", pid).execute()
+                                if p_data.data: nomes_vinc.append(f"{p_data.data[0]['nome']} ({p_data.data[0]['vulgo']})")
+                            
+                            if nomes_vinc: st.info(f"🔗 **Alvos ligados a este registro:** {', '.join(nomes_vinc)}")
+                            else: st.warning("🔗 Nenhum alvo vinculado a este registro.")
+                        except: pass
+                        
+                        col_up_t, col_up_d = st.columns(2)
+                        with col_up_t:
+                            up_tipo = text_input_obj = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
+                            
+                        # Tratamento para exibir a data atual na edição
+                        data_str = dados_fato.get('data_hora')
+                        try:
+                            if data_str:
+                                data_obj = datetime.strptime(data_str[:10], "%Y-%m-%d").date()
+                            else:
+                                data_obj = datetime.today().date()
+                        except:
+                            data_obj = datetime.today().date()
+                            
+                        with col_up_d:
+                            up_data = st.date_input("Data do Evento", value=data_obj)
+                            
                         up_bairro = st.text_input("Bairro", value=dados_fato.get('bairro_setor') or "")
                         up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
+                        
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 supabase.table("fato_eventos").update({
-                                    "tipo_evento": up_tipo, "bairro_setor": up_bairro, "resumo_obs": up_resumo
+                                    "tipo_evento": up_tipo, 
+                                    "data_hora": up_data.isoformat(),
+                                    "bairro_setor": up_bairro, 
+                                    "resumo_obs": up_resumo
                                 }).eq("id_evento", id_f).execute()
                                 st.success("✅ Dados atualizados!")
                                 st.rerun()
