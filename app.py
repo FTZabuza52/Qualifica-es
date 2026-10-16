@@ -71,6 +71,7 @@ def apagar_fotos_bucket(string_urls):
 # ==========================================
 # RECOLHA DE DADOS (DICIONÁRIOS BLINDADOS)
 # ==========================================
+# 1. Busca Pessoas
 try:
     resp_p = supabase.table("dim_pessoas").select("*").execute()
     lista_alvos_bruta = resp_p.data if resp_p.data else []
@@ -79,14 +80,52 @@ except Exception as e:
     dic_alvos = {}
     lista_alvos_bruta = []
 
+# 2. Busca Vínculos (Para descobrir de quem é o fato)
+try:
+    resp_links = supabase.table("ponte_vinculos").select("*").execute()
+    links_fatos_pessoas = resp_links.data if resp_links.data else []
+except:
+    links_fatos_pessoas = []
+
+# 3. Busca Fatos e Monta Nomes
 try:
     resp_f = supabase.table("fato_eventos").select("*").execute()
     lista_fatos_bruta = resp_f.data if resp_f.data else []
-    dic_fatos = {f"{a.get('tipo_evento','')} - {a.get('bairro_setor','')}": a.get('id_evento') for a in lista_fatos_bruta}
+
+    # Cria um mapa: ID do Evento -> Lista de Nomes de Pessoas
+    fatos_nomes_map = {}
+    for link in links_fatos_pessoas:
+        id_ev = link.get('id_evento')
+        id_pe = link.get('id_pessoa')
+        nome_p = next((p.get('nome') for p in lista_alvos_bruta if p.get('id_pessoa') == id_pe), None)
+        if nome_p:
+            if id_ev not in fatos_nomes_map: fatos_nomes_map[id_ev] = []
+            fatos_nomes_map[id_ev].append(nome_p)
+
+    dic_fatos = {}
+    for f in lista_fatos_bruta:
+        id_f = f.get('id_evento')
+        tipo = f.get('tipo_evento', '')
+        bairro = f.get('bairro_setor', '')
+
+        nomes_vinculados = fatos_nomes_map.get(id_f, [])
+        if nomes_vinculados:
+            str_nomes = ", ".join(nomes_vinculados)
+            label = f"[{str_nomes}] {tipo} - {bairro}"
+        else:
+            label = f"[Alvo Solto] {tipo} - {bairro}"
+
+        # Evita conflitos se houver nomes e fatos idênticos
+        while label in dic_fatos:
+            label = f"{label} (*)"
+
+        dic_fatos[label] = id_f
+
 except Exception as e:
     dic_fatos = {}
     lista_fatos_bruta = []
 
+# 4. Busca Veículos
 try:
     resp_v = supabase.table("dim_veiculos").select("*").execute()
     lista_veiculos_bruta = resp_v.data if resp_v.data else []
@@ -293,7 +332,7 @@ with aba_gestao:
                 
                 if dados_fato:
                     with st.form("form_upd_fato"):
-                        st.markdown(f"**Editando Evento ID: {id_f}**")
+                        st.markdown(f"**Editando o Fato Selecionado**")
                         up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
                         up_bairro = st.text_input("Bairro", value=dados_fato.get('bairro_setor') or "")
                         up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
