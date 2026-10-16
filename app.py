@@ -71,7 +71,6 @@ def apagar_fotos_bucket(string_urls):
 # ==========================================
 # RECOLHA DE DADOS (DICIONÁRIOS BLINDADOS)
 # ==========================================
-# 1. Busca Pessoas
 try:
     resp_p = supabase.table("dim_pessoas").select("*").execute()
     lista_alvos_bruta = resp_p.data if resp_p.data else []
@@ -80,19 +79,15 @@ except Exception as e:
     dic_alvos = {}
     lista_alvos_bruta = []
 
-# 2. Busca Vínculos (Para descobrir de quem é o fato)
 try:
     resp_links = supabase.table("ponte_vinculos").select("*").execute()
     links_fatos_pessoas = resp_links.data if resp_links.data else []
 except:
     links_fatos_pessoas = []
 
-# 3. Busca Fatos e Monta Nomes
 try:
     resp_f = supabase.table("fato_eventos").select("*").execute()
     lista_fatos_bruta = resp_f.data if resp_f.data else []
-
-    # Cria um mapa: ID do Evento -> Lista de Nomes de Pessoas
     fatos_nomes_map = {}
     for link in links_fatos_pessoas:
         id_ev = link.get('id_evento')
@@ -101,31 +96,24 @@ try:
         if nome_p:
             if id_ev not in fatos_nomes_map: fatos_nomes_map[id_ev] = []
             fatos_nomes_map[id_ev].append(nome_p)
-
     dic_fatos = {}
     for f in lista_fatos_bruta:
         id_f = f.get('id_evento')
         tipo = f.get('tipo_evento', '')
         bairro = f.get('bairro_setor', '')
-
         nomes_vinculados = fatos_nomes_map.get(id_f, [])
         if nomes_vinculados:
             str_nomes = ", ".join(nomes_vinculados)
             label = f"[{str_nomes}] {tipo} - {bairro}"
         else:
             label = f"[Alvo Solto] {tipo} - {bairro}"
-
-        # Evita conflitos se houver nomes e fatos idênticos
         while label in dic_fatos:
             label = f"{label} (*)"
-
         dic_fatos[label] = id_f
-
 except Exception as e:
     dic_fatos = {}
     lista_fatos_bruta = []
 
-# 4. Busca Veículos
 try:
     resp_v = supabase.table("dim_veiculos").select("*").execute()
     lista_veiculos_bruta = resp_v.data if resp_v.data else []
@@ -135,20 +123,15 @@ except Exception as e:
     lista_veiculos_bruta = []
 
 # ==========================================
-# CABEÇALHO
+# CABEÇALHO E TABS
 # ==========================================
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    try:
-        st.image("logo.jpg", use_container_width=True)
+    try: st.image("logo.jpg", use_container_width=True)
     except: pass
-
 st.markdown("<h2 style='text-align: center;'>Sistema de Inteligência FT-20</h2>", unsafe_allow_html=True)
 st.divider()
 
-# ==========================================
-# INTERFACE PRINCIPAL (4 ABAS)
-# ==========================================
 aba_alvo, aba_local, aba_veiculo, aba_gestao = st.tabs(["👤 Indivíduo", "🏠 Fato/Local", "🚗 Veículo", "⚙️ Gestão"])
 
 # ----------------- ABA 1: PESSOAS -----------------
@@ -157,25 +140,18 @@ with aba_alvo:
         st.markdown("### Qualificação do Alvo")
         nome = st.text_input("Nome Completo")
         vulgo = st.text_input("Vulgo")
-        
         col_mae, col_nasc = st.columns(2)
         with col_mae: nome_mae = st.text_input("Nome da Mãe")
         with col_nasc: data_nascimento = st.text_input("Data de Nascimento")
-            
         cpf = st.text_input("CPF")
-        
         st.markdown("### Endereço Fixo (Moradia)")
         endereco = st.text_input("Endereço Residencial")
         coordenadas_alvo = st.text_input("Localização do Endereço (Lat, Lon do Maps)")
-        
         st.markdown("### Características e Mídia")
         tatuagens = st.text_area("Tatuagens e Sinais")
-        obs = st.text_area("Observações Gerais")
-        
+        obs = st.text_area("Observações Gerais / Passagens")
         fotos_alvo = st.file_uploader("Fotografias do Alvo", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-        
         st.markdown("---")
-        st.write("🔗 **Vínculos Iniciais**")
         v_fatos = st.multiselect("Vincular a Fatos/Locais:", list(dic_fatos.keys()), key="alvo_fatos")
         v_veiculos = st.multiselect("Vincular a Veículos:", list(dic_veiculos.keys()), key="alvo_veiculos")
         
@@ -188,14 +164,12 @@ with aba_alvo:
                     supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
                     urls_fotos.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
             url_foto_final = ", ".join(urls_fotos)
-
             lat_alvo, lon_alvo = extrair_coordenadas(coordenadas_alvo)
             dados = {
                 "nome": nome, "vulgo": vulgo, "nome_mae": nome_mae, "data_nascimento": data_nascimento, 
                 "cpf": cpf, "endereco": endereco, "latitude": lat_alvo, "longitude": lon_alvo, 
                 "tatuagens_sinais": tatuagens, "observacoes": obs, "caminho_foto": url_foto_final
             }
-            
             try:
                 res = supabase.table("dim_pessoas").insert(dados).execute()
                 if res.data:
@@ -209,20 +183,13 @@ with aba_alvo:
 with aba_local:
     with st.form("form_local", clear_on_submit=True):
         st.markdown("### Registo do Evento")
-        lista_eventos = [
-            "Abordagem", "Visto/Abordado", "LTD", "MP ATIVO", "Casa bomba", 
-            "Indivíduo Armado", "Veículo com queixa de roubo", 
-            "Veículo usado em Crime", "Lideranças/Disciplina", "Ponto de Salves", "Outro"
-        ]
+        lista_eventos = ["Abordagem", "Visto/Abordado", "LTD", "MP ATIVO", "Casa bomba", "Indivíduo Armado", "Veículo com queixa de roubo", "Veículo usado em Crime", "Lideranças/Disciplina", "Ponto de Salves", "Outro"]
         tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
-        
         bairro = st.text_input("Bairro / Setor")
         coordenadas_fato = st.text_input("Coordenadas Exatas (Lat, Lon)")
         resumo = st.text_area("Detalhes da Patrulha")
         fotos_local = st.file_uploader("Fotografias do Local", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-        
         st.markdown("---")
-        st.write("🔗 **Vínculos Iniciais**")
         v_alvos = st.multiselect("Vincular a Indivíduos:", list(dic_alvos.keys()), key="fato_alvos")
         v_veic_fato = st.multiselect("Vincular a Veículos:", list(dic_veiculos.keys()), key="fato_veic")
         
@@ -235,10 +202,8 @@ with aba_local:
                     supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
                     urls_fotos_local.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
             url_foto_local_final = ", ".join(urls_fotos_local)
-
             lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
             dados_fato = {"tipo_evento": tipo_evento, "bairro_setor": bairro, "latitude": lat_fato, "longitude": lon_fato, "resumo_obs": resumo, "caminho_foto": url_foto_local_final}
-            
             try:
                 res = supabase.table("fato_eventos").insert(dados_fato).execute()
                 if res.data:
@@ -255,13 +220,10 @@ with aba_veiculo:
         col_tipo, col_marca = st.columns(2)
         with col_tipo: tipo_basico = st.selectbox("Tipo", ["Carro", "Moto", "Caminhonete", "Caminhão", "Outro"])
         with col_marca: marca_modelo = st.text_input("Marca/Modelo")
-            
         col_cor, col_placa = st.columns(2)
         with col_cor: cor = st.text_input("Cor Predominante")
         with col_placa: placa = st.text_input("Placa")
-            
         caracteristicas = st.text_area("Características Marcantes")
-        
         st.markdown("---")
         v_alvos_veic = st.multiselect("Vincular a Indivíduos:", list(dic_alvos.keys()), key="veic_alvos")
         v_fatos_veic = st.multiselect("Vincular a Fatos:", list(dic_fatos.keys()), key="veic_fatos")
@@ -269,7 +231,6 @@ with aba_veiculo:
         if st.form_submit_button("Gravar Veículo"):
             tipo_final = f"{tipo_basico} - {marca_modelo}" if marca_modelo else tipo_basico
             dados_veic = {"tipo": tipo_final, "cor": cor, "placa": placa, "caracteristicas": caracteristicas}
-            
             try:
                 res = supabase.table("dim_veiculos").insert(dados_veic).execute()
                 if res.data:
@@ -282,11 +243,9 @@ with aba_veiculo:
 # ----------------- ABA 4: GESTÃO E AUDITORIA -----------------
 with aba_gestao:
     st.markdown("### ⚙️ Painel de Controle de Dados")
-    st.info("Aqui você altera informações existentes ou apaga registros. Apagar um registro destrói automaticamente as fotos no servidor.")
-    
     tabela_alvo = st.radio("Selecione o banco de dados:", ["👤 Pessoas", "🏠 Fatos", "🚗 Veículos"], horizontal=True)
 
-   if tabela_alvo == "👤 Pessoas":
+    if tabela_alvo == "👤 Pessoas":
         opcoes_alvos = list(dic_alvos.keys())
         if len(opcoes_alvos) == 0:
             st.warning("Nenhum indivíduo cadastrado.")
@@ -295,52 +254,31 @@ with aba_gestao:
             if alvo_selecionado != "":
                 id_p = dic_alvos[alvo_selecionado]
                 dados_alvo = next((item for item in lista_alvos_bruta if item["id_pessoa"] == id_p), None)
-                
                 if dados_alvo:
                     with st.form("form_upd_pessoa"):
                         st.markdown(f"**Editando Ficha Completa: {dados_alvo.get('nome')}**")
-                        
                         up_nome = st.text_input("Nome", value=dados_alvo.get('nome') or "")
                         up_vulgo = st.text_input("Vulgo", value=dados_alvo.get('vulgo') or "")
-                        
                         col_mae, col_nasc = st.columns(2)
-                        with col_mae: 
-                            up_mae = st.text_input("Nome da Mãe", value=dados_alvo.get('nome_mae') or "")
-                        with col_nasc: 
-                            up_nasc = st.text_input("Data de Nascimento", value=dados_alvo.get('data_nascimento') or "")
-                            
+                        with col_mae: up_mae = st.text_input("Nome da Mãe", value=dados_alvo.get('nome_mae') or "")
+                        with col_nasc: up_nasc = st.text_input("Data de Nascimento", value=dados_alvo.get('data_nascimento') or "")
                         up_cpf = st.text_input("CPF", value=dados_alvo.get('cpf') or "")
                         up_endereco = st.text_input("Endereço Residencial", value=dados_alvo.get('endereco') or "")
-                        
-                        # Reconstrói a coordenada para exibição
-                        lat_atual = dados_alvo.get('latitude') or ""
-                        lon_atual = dados_alvo.get('longitude') or ""
-                        coords_atuais = f"{lat_atual}, {lon_atual}" if lat_atual and lon_atual else ""
-                        up_coords = st.text_input("Localização do Endereço (Lat, Lon)", value=coords_atuais)
-                        
+                        lat_a, lon_a = dados_alvo.get('latitude') or "", dados_alvo.get('longitude') or ""
+                        up_coords = st.text_input("Localização do Endereço (Lat, Lon)", value=f"{lat_a}, {lon_a}" if lat_a and lon_a else "")
                         up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
-                        up_obs = st.text_area("Observações Gerais", value=dados_alvo.get('observacoes') or "")
-                        
+                        up_obs = st.text_area("Observações Gerais / Passagens", value=dados_alvo.get('observacoes') or "")
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 lat_nova, lon_nova = extrair_coordenadas(up_coords)
-                                
                                 supabase.table("dim_pessoas").update({
-                                    "nome": up_nome, 
-                                    "vulgo": up_vulgo, 
-                                    "nome_mae": up_mae,
-                                    "data_nascimento": up_nasc,
-                                    "cpf": up_cpf, 
-                                    "endereco": up_endereco,
-                                    "latitude": lat_nova,
-                                    "longitude": lon_nova,
-                                    "tatuagens_sinais": up_tattoo,
-                                    "observacoes": up_obs
+                                    "nome": up_nome, "vulgo": up_vulgo, "nome_mae": up_mae, "data_nascimento": up_nasc,
+                                    "cpf": up_cpf, "endereco": up_endereco, "latitude": lat_nova, "longitude": lon_nova,
+                                    "tatuagens_sinais": up_tattoo, "observacoes": up_obs
                                 }).eq("id_pessoa", id_p).execute()
                                 st.success("✅ Dados de qualificação atualizados!")
                                 st.rerun()
-                            except Exception as e: st.error(f"Erro ao salvar: {e}")
-
+                            except Exception as e: st.error(f"Erro: {e}")
                     st.markdown("---")
                     if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_alvo.get('caminho_foto'))
@@ -357,14 +295,12 @@ with aba_gestao:
             if fato_selecionado != "":
                 id_f = dic_fatos[fato_selecionado]
                 dados_fato = next((item for item in lista_fatos_bruta if item["id_evento"] == id_f), None)
-                
                 if dados_fato:
                     with st.form("form_upd_fato"):
                         st.markdown(f"**Editando o Fato Selecionado**")
                         up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
                         up_bairro = st.text_input("Bairro", value=dados_fato.get('bairro_setor') or "")
                         up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
-                        
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 supabase.table("fato_eventos").update({
@@ -373,7 +309,6 @@ with aba_gestao:
                                 st.success("✅ Dados atualizados!")
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
-
                     st.markdown("---")
                     if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_fato.get('caminho_foto'))
@@ -390,7 +325,6 @@ with aba_gestao:
             if veic_selecionado != "":
                 id_v = dic_veiculos[veic_selecionado]
                 dados_veic = next((item for item in lista_veiculos_bruta if item["id_veiculo"] == id_v), None)
-                
                 if dados_veic:
                     with st.form("form_upd_veic"):
                         st.markdown(f"**Editando Veículo: {dados_veic.get('placa')}**")
@@ -398,7 +332,6 @@ with aba_gestao:
                         up_cor_v = st.text_input("Cor", value=dados_veic.get('cor') or "")
                         up_placa_v = st.text_input("Placa", value=dados_veic.get('placa') or "")
                         up_carac_v = st.text_area("Características", value=dados_veic.get('caracteristicas') or "")
-                        
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 supabase.table("dim_veiculos").update({
@@ -407,7 +340,6 @@ with aba_gestao:
                                 st.success("✅ Dados atualizados!")
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
-
                     st.markdown("---")
                     if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
                         supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
