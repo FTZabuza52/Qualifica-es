@@ -173,8 +173,23 @@ with aba_alvo:
 # ----------------- ABA 2: FATOS / EVENTOS -----------------
 with aba_local:
     with st.form("form_local", clear_on_submit=True):
+        # ----------------- ABA 2: FATOS / EVENTOS -----------------
         st.markdown("### Registo do Evento")
-        lista_eventos = ["Visto/Abordado", "LTD", "MP ATIVO", "Casa bomba", "Indivíduo Armado", "Veículo com queixa de roubo", "Veículo usado em Crime", "Lideranças/Disciplina", "Ponto de Salves", "Outro"]
+        
+        # Adicionado o evento "Abordagem" logo no início da lista
+        lista_eventos = [
+            "Abordagem", 
+            "Visto/Abordado", 
+            "LTD", 
+            "MP ATIVO", 
+            "Casa bomba", 
+            "Indivíduo Armado", 
+            "Veículo com queixa de roubo", 
+            "Veículo usado em Crime", 
+            "Lideranças/Disciplina", 
+            "Ponto de Salves", 
+            "Outro"
+        ]
         tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
         
         bairro = st.text_input("Bairro / Setor")
