@@ -52,7 +52,6 @@ def extrair_coordenadas(texto_coords):
             lat = texto_coords.strip()
     return lat, lon
 
-# NOVA FUNÇÃO: DESTRUIÇÃO FÍSICA DE MÍDIA NO BUCKET
 def apagar_fotos_bucket(string_urls):
     if not string_urls: return
     urls = string_urls.split(',')
@@ -70,29 +69,29 @@ def apagar_fotos_bucket(string_urls):
             st.error(f"Aviso - Falha ao limpar bucket: {e}")
 
 # ==========================================
-# RECOLHA DE DADOS (DICIONÁRIOS)
+# RECOLHA DE DADOS (DICIONÁRIOS BLINDADOS)
 # ==========================================
 try:
-    resp = supabase.table("dim_pessoas").select("*").execute()
-    dic_alvos = {f"{a.get('nome','')} ({a.get('vulgo','')})": a.get('id_pessoa') for a in resp.data}
-    lista_alvos_bruta = resp.data
-except: 
+    resp_p = supabase.table("dim_pessoas").select("*").execute()
+    lista_alvos_bruta = resp_p.data if resp_p.data else []
+    dic_alvos = {f"{a.get('nome','')} ({a.get('vulgo','')})": a.get('id_pessoa') for a in lista_alvos_bruta}
+except Exception as e:
     dic_alvos = {}
     lista_alvos_bruta = []
 
 try:
-    resp = supabase.table("fato_eventos").select("*").execute()
-    dic_fatos = {f"{a.get('tipo_evento','')} - {a.get('bairro_setor','')}": a.get('id_evento') for a in resp.data}
-    lista_fatos_bruta = resp.data
-except: 
+    resp_f = supabase.table("fato_eventos").select("*").execute()
+    lista_fatos_bruta = resp_f.data if resp_f.data else []
+    dic_fatos = {f"{a.get('tipo_evento','')} - {a.get('bairro_setor','')}": a.get('id_evento') for a in lista_fatos_bruta}
+except Exception as e:
     dic_fatos = {}
     lista_fatos_bruta = []
 
 try:
-    resp = supabase.table("dim_veiculos").select("*").execute()
-    dic_veiculos = {f"{a.get('placa','S/Placa')} - {a.get('cor','')} {a.get('tipo','')}": a.get('id_veiculo') for a in resp.data}
-    lista_veiculos_bruta = resp.data
-except: 
+    resp_v = supabase.table("dim_veiculos").select("*").execute()
+    lista_veiculos_bruta = resp_v.data if resp_v.data else []
+    dic_veiculos = {f"{a.get('placa','S/Placa')} - {a.get('cor','')} {a.get('tipo','')}": a.get('id_veiculo') for a in lista_veiculos_bruta}
+except Exception as e:
     dic_veiculos = {}
     lista_veiculos_bruta = []
 
@@ -103,14 +102,13 @@ col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     try:
         st.image("logo.jpg", use_container_width=True)
-    except:
-        pass
+    except: pass
 
 st.markdown("<h2 style='text-align: center;'>Sistema de Inteligência FT-20</h2>", unsafe_allow_html=True)
 st.divider()
 
 # ==========================================
-# INTERFACE PRINCIPAL (4 ABAS AGORA)
+# INTERFACE PRINCIPAL (4 ABAS)
 # ==========================================
 aba_alvo, aba_local, aba_veiculo, aba_gestao = st.tabs(["👤 Indivíduo", "🏠 Fato/Local", "🚗 Veículo", "⚙️ Gestão"])
 
@@ -127,8 +125,7 @@ with aba_alvo:
             
         cpf = st.text_input("CPF")
         
-        st.markdown("### Endereço e MP")
-        status_mandado = st.text_input("Status Mandado (Ex: Ativo - Homicídio)")
+        st.markdown("### Endereço Fixo (Moradia)")
         endereco = st.text_input("Endereço Residencial")
         coordenadas_alvo = st.text_input("Localização do Endereço (Lat, Lon do Maps)")
         
@@ -157,8 +154,7 @@ with aba_alvo:
             dados = {
                 "nome": nome, "vulgo": vulgo, "nome_mae": nome_mae, "data_nascimento": data_nascimento, 
                 "cpf": cpf, "endereco": endereco, "latitude": lat_alvo, "longitude": lon_alvo, 
-                "tatuagens_sinais": tatuagens, "observacoes": obs, "status_mandado": status_mandado,
-                "caminho_foto": url_foto_final
+                "tatuagens_sinais": tatuagens, "observacoes": obs, "caminho_foto": url_foto_final
             }
             
             try:
@@ -173,22 +169,11 @@ with aba_alvo:
 # ----------------- ABA 2: FATOS / EVENTOS -----------------
 with aba_local:
     with st.form("form_local", clear_on_submit=True):
-        # ----------------- ABA 2: FATOS / EVENTOS -----------------
         st.markdown("### Registo do Evento")
-        
-        # Adicionado o evento "Abordagem" logo no início da lista
         lista_eventos = [
-            "Abordagem", 
-            "Visto/Abordado", 
-            "LTD", 
-            "MP ATIVO", 
-            "Casa bomba", 
-            "Indivíduo Armado", 
-            "Veículo com queixa de roubo", 
-            "Veículo usado em Crime", 
-            "Lideranças/Disciplina", 
-            "Ponto de Salves", 
-            "Outro"
+            "Abordagem", "Visto/Abordado", "LTD", "MP ATIVO", "Casa bomba", 
+            "Indivíduo Armado", "Veículo com queixa de roubo", 
+            "Veículo usado em Crime", "Lideranças/Disciplina", "Ponto de Salves", "Outro"
         ]
         tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
         
@@ -262,102 +247,102 @@ with aba_gestao:
     
     tabela_alvo = st.radio("Selecione o banco de dados:", ["👤 Pessoas", "🏠 Fatos", "🚗 Veículos"], horizontal=True)
 
-    # LÓGICA DE GESTÃO PARA PESSOAS
     if tabela_alvo == "👤 Pessoas":
-        if not dic_alvos:
+        opcoes_alvos = list(dic_alvos.keys())
+        if len(opcoes_alvos) == 0:
             st.warning("Nenhum indivíduo cadastrado.")
         else:
-            alvo_selecionado = st.selectbox("Selecione o alvo para gerenciar:", [""] + list(dic_alvos.keys()))
-            if alvo_selecionado:
+            alvo_selecionado = st.selectbox("Selecione o alvo para gerenciar:", [""] + opcoes_alvos)
+            if alvo_selecionado != "":
                 id_p = dic_alvos[alvo_selecionado]
-                # Puxa o dicionário completo do alvo selecionado
-                dados_alvo = next(item for item in lista_alvos_bruta if item["id_pessoa"] == id_p)
+                dados_alvo = next((item for item in lista_alvos_bruta if item["id_pessoa"] == id_p), None)
                 
-                with st.form("form_upd_pessoa"):
-                    st.markdown(f"**Editando: {dados_alvo.get('nome')}**")
-                    up_nome = st.text_input("Nome", value=dados_alvo.get('nome') or "")
-                    up_vulgo = st.text_input("Vulgo", value=dados_alvo.get('vulgo') or "")
-                    up_cpf = st.text_input("CPF", value=dados_alvo.get('cpf') or "")
-                    up_status = st.text_input("Status Mandado", value=dados_alvo.get('status_mandado') or "")
-                    up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
-                    
-                    if st.form_submit_button("🔄 Salvar Alterações"):
-                        try:
-                            supabase.table("dim_pessoas").update({
-                                "nome": up_nome, "vulgo": up_vulgo, "cpf": up_cpf, 
-                                "status_mandado": up_status, "tatuagens_sinais": up_tattoo
-                            }).eq("id_pessoa", id_p).execute()
-                            st.success("✅ Dados atualizados!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Erro: {e}")
+                if dados_alvo:
+                    with st.form("form_upd_pessoa"):
+                        st.markdown(f"**Editando: {dados_alvo.get('nome')}**")
+                        up_nome = st.text_input("Nome", value=dados_alvo.get('nome') or "")
+                        up_vulgo = st.text_input("Vulgo", value=dados_alvo.get('vulgo') or "")
+                        up_cpf = st.text_input("CPF", value=dados_alvo.get('cpf') or "")
+                        up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
+                        
+                        if st.form_submit_button("🔄 Salvar Alterações"):
+                            try:
+                                supabase.table("dim_pessoas").update({
+                                    "nome": up_nome, "vulgo": up_vulgo, "cpf": up_cpf, "tatuagens_sinais": up_tattoo
+                                }).eq("id_pessoa", id_p).execute()
+                                st.success("✅ Dados atualizados!")
+                                st.rerun()
+                            except Exception as e: st.error(f"Erro: {e}")
 
-                st.markdown("---")
-                if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
-                    apagar_fotos_bucket(dados_alvo.get('caminho_foto'))
-                    supabase.table("dim_pessoas").delete().eq("id_pessoa", id_p).execute()
-                    st.success("💀 Alvo e mídias erradicados da base.")
-                    st.rerun()
+                    st.markdown("---")
+                    if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
+                        apagar_fotos_bucket(dados_alvo.get('caminho_foto'))
+                        supabase.table("dim_pessoas").delete().eq("id_pessoa", id_p).execute()
+                        st.success("💀 Alvo e mídias erradicados da base.")
+                        st.rerun()
 
-    # LÓGICA DE GESTÃO PARA FATOS
     elif tabela_alvo == "🏠 Fatos":
-        if not dic_fatos:
+        opcoes_fatos = list(dic_fatos.keys())
+        if len(opcoes_fatos) == 0:
             st.warning("Nenhum evento cadastrado.")
         else:
-            fato_selecionado = st.selectbox("Selecione o evento para gerenciar:", [""] + list(dic_fatos.keys()))
-            if fato_selecionado:
+            fato_selecionado = st.selectbox("Selecione o evento para gerenciar:", [""] + opcoes_fatos)
+            if fato_selecionado != "":
                 id_f = dic_fatos[fato_selecionado]
-                dados_fato = next(item for item in lista_fatos_bruta if item["id_evento"] == id_f)
+                dados_fato = next((item for item in lista_fatos_bruta if item["id_evento"] == id_f), None)
                 
-                with st.form("form_upd_fato"):
-                    st.markdown(f"**Editando Evento ID: {id_f}**")
-                    up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
-                    up_bairro = st.text_input("Bairro", value=dados_fato.get('bairro_setor') or "")
-                    up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
-                    
-                    if st.form_submit_button("🔄 Salvar Alterações"):
-                        try:
-                            supabase.table("fato_eventos").update({
-                                "tipo_evento": up_tipo, "bairro_setor": up_bairro, "resumo_obs": up_resumo
-                            }).eq("id_evento", id_f).execute()
-                            st.success("✅ Dados atualizados!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Erro: {e}")
+                if dados_fato:
+                    with st.form("form_upd_fato"):
+                        st.markdown(f"**Editando Evento ID: {id_f}**")
+                        up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
+                        up_bairro = st.text_input("Bairro", value=dados_fato.get('bairro_setor') or "")
+                        up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
+                        
+                        if st.form_submit_button("🔄 Salvar Alterações"):
+                            try:
+                                supabase.table("fato_eventos").update({
+                                    "tipo_evento": up_tipo, "bairro_setor": up_bairro, "resumo_obs": up_resumo
+                                }).eq("id_evento", id_f).execute()
+                                st.success("✅ Dados atualizados!")
+                                st.rerun()
+                            except Exception as e: st.error(f"Erro: {e}")
 
-                st.markdown("---")
-                if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
-                    apagar_fotos_bucket(dados_fato.get('caminho_foto'))
-                    supabase.table("fato_eventos").delete().eq("id_evento", id_f).execute()
-                    st.success("💀 Evento e mídias erradicados da base.")
-                    st.rerun()
+                    st.markdown("---")
+                    if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
+                        apagar_fotos_bucket(dados_fato.get('caminho_foto'))
+                        supabase.table("fato_eventos").delete().eq("id_evento", id_f).execute()
+                        st.success("💀 Evento e mídias erradicados da base.")
+                        st.rerun()
 
-    # LÓGICA DE GESTÃO PARA VEÍCULOS
     elif tabela_alvo == "🚗 Veículos":
-        if not dic_veiculos:
+        opcoes_veiculos = list(dic_veiculos.keys())
+        if len(opcoes_veiculos) == 0:
             st.warning("Nenhum veículo cadastrado.")
         else:
-            veic_selecionado = st.selectbox("Selecione o veículo para gerenciar:", [""] + list(dic_veiculos.keys()))
-            if veic_selecionado:
+            veic_selecionado = st.selectbox("Selecione o veículo para gerenciar:", [""] + opcoes_veiculos)
+            if veic_selecionado != "":
                 id_v = dic_veiculos[veic_selecionado]
-                dados_veic = next(item for item in lista_veiculos_bruta if item["id_veiculo"] == id_v)
+                dados_veic = next((item for item in lista_veiculos_bruta if item["id_veiculo"] == id_v), None)
                 
-                with st.form("form_upd_veic"):
-                    st.markdown(f"**Editando Veículo: {dados_veic.get('placa')}**")
-                    up_tipo_v = st.text_input("Tipo/Modelo", value=dados_veic.get('tipo') or "")
-                    up_cor_v = st.text_input("Cor", value=dados_veic.get('cor') or "")
-                    up_placa_v = st.text_input("Placa", value=dados_veic.get('placa') or "")
-                    up_carac_v = st.text_area("Características", value=dados_veic.get('caracteristicas') or "")
-                    
-                    if st.form_submit_button("🔄 Salvar Alterações"):
-                        try:
-                            supabase.table("dim_veiculos").update({
-                                "tipo": up_tipo_v, "cor": up_cor_v, "placa": up_placa_v, "caracteristicas": up_carac_v
-                            }).eq("id_veiculo", id_v).execute()
-                            st.success("✅ Dados atualizados!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Erro: {e}")
+                if dados_veic:
+                    with st.form("form_upd_veic"):
+                        st.markdown(f"**Editando Veículo: {dados_veic.get('placa')}**")
+                        up_tipo_v = st.text_input("Tipo/Modelo", value=dados_veic.get('tipo') or "")
+                        up_cor_v = st.text_input("Cor", value=dados_veic.get('cor') or "")
+                        up_placa_v = st.text_input("Placa", value=dados_veic.get('placa') or "")
+                        up_carac_v = st.text_area("Características", value=dados_veic.get('caracteristicas') or "")
+                        
+                        if st.form_submit_button("🔄 Salvar Alterações"):
+                            try:
+                                supabase.table("dim_veiculos").update({
+                                    "tipo": up_tipo_v, "cor": up_cor_v, "placa": up_placa_v, "caracteristicas": up_carac_v
+                                }).eq("id_veiculo", id_v).execute()
+                                st.success("✅ Dados atualizados!")
+                                st.rerun()
+                            except Exception as e: st.error(f"Erro: {e}")
 
-                st.markdown("---")
-                if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
-                    supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
-                    st.success("💀 Veículo erradicado da base.")
-                    st.rerun()
+                    st.markdown("---")
+                    if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
+                        supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
+                        st.success("💀 Veículo erradicado da base.")
+                        st.rerun()
