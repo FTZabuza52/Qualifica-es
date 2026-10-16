@@ -298,8 +298,12 @@ with aba_gestao:
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
                     st.markdown("---")
-                    if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
+                  if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_alvo.get('caminho_foto'))
+                        # Desamarra a teia primeiro
+                        supabase.table("ponte_vinculos").delete().eq("id_pessoa", id_p).execute()
+                        supabase.table("ponte_pessoas_veiculos").delete().eq("id_pessoa", id_p).execute()
+                        # Exclui o alvo
                         supabase.table("dim_pessoas").delete().eq("id_pessoa", id_p).execute()
                         st.success("💀 Alvo e mídias erradicados da base.")
                         st.rerun()
@@ -361,12 +365,15 @@ with aba_gestao:
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
                     st.markdown("---")
-                    if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
+                   if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_fato.get('caminho_foto'))
+                        # Desamarra a teia primeiro
+                        supabase.table("ponte_vinculos").delete().eq("id_evento", id_f).execute()
+                        supabase.table("ponte_fatos_veiculos").delete().eq("id_evento", id_f).execute()
+                        # Exclui o evento
                         supabase.table("fato_eventos").delete().eq("id_evento", id_f).execute()
                         st.success("💀 Evento e mídias erradicados da base.")
                         st.rerun()
-
     elif tabela_alvo == "🚗 Veículos":
         opcoes_veiculos = list(dic_veiculos.keys())
         if len(opcoes_veiculos) == 0:
@@ -392,7 +399,11 @@ with aba_gestao:
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
                     st.markdown("---")
-                    if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
+                   if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
+                        # Desamarra a teia primeiro
+                        supabase.table("ponte_pessoas_veiculos").delete().eq("id_veiculo", id_v).execute()
+                        supabase.table("ponte_fatos_veiculos").delete().eq("id_veiculo", id_v).execute()
+                        # Exclui o veículo
                         supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
                         st.success("💀 Veículo erradicado da base.")
                         st.rerun()
