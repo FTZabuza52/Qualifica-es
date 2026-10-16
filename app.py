@@ -31,7 +31,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# CONEXÃO SUPABASE E FUNÇÕES
+# CONEXÃO SUPABASE
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -55,22 +55,19 @@ def extrair_coordenadas(texto_coords):
 # ==========================================
 # RECOLHA DE DADOS PARA OS VÍNCULOS
 # ==========================================
-# Puxa Pessoas
 try:
     resp = supabase.table("dim_pessoas").select("*").execute()
-    dic_alvos = {f"{a.get('nome','')} ({a.get('vulgo','')})": a.get('id_pessoa') or a.get('id') for a in resp.data}
+    dic_alvos = {f"{a.get('nome','')} ({a.get('vulgo','')})": a.get('id_pessoa') for a in resp.data}
 except: dic_alvos = {}
 
-# Puxa Fatos
 try:
     resp = supabase.table("fato_eventos").select("*").execute()
-    dic_fatos = {f"{a.get('tipo_evento','')} - {a.get('bairro_setor','')}": a.get('id_evento') or a.get('id') for a in resp.data}
+    dic_fatos = {f"{a.get('tipo_evento','')} - {a.get('bairro_setor','')}": a.get('id_evento') for a in resp.data}
 except: dic_fatos = {}
 
-# Puxa Veículos
 try:
     resp = supabase.table("dim_veiculos").select("*").execute()
-    dic_veiculos = {f"{a.get('placa','S/Placa')} - {a.get('cor','')} {a.get('tipo','')}": a.get('id_veiculo') or a.get('id') for a in resp.data}
+    dic_veiculos = {f"{a.get('placa','S/Placa')} - {a.get('cor','')} {a.get('tipo','')}": a.get('id_veiculo') for a in resp.data}
 except: dic_veiculos = {}
 
 # ==========================================
@@ -94,18 +91,30 @@ aba_alvo, aba_local, aba_veiculo = st.tabs(["👤 Indivíduo", "🏠 Fato/Local"
 # ----------------- ABA 1: PESSOAS -----------------
 with aba_alvo:
     with st.form("form_alvo", clear_on_submit=True):
+        st.markdown("### Qualificação do Alvo")
         nome = st.text_input("Nome Completo")
         vulgo = st.text_input("Vulgo")
+        
+        col_mae, col_nasc = st.columns(2)
+        with col_mae:
+            nome_mae = st.text_input("Nome da Mãe")
+        with col_nasc:
+            data_nascimento = st.text_input("Data de Nascimento")
+            
         cpf = st.text_input("CPF")
-        faccao = st.selectbox("Facção/Grupo", ["Nenhuma", "CV", "PCC", "Outra"])
-        endereco = st.text_input("Endereço Principal")
-        coordenadas_alvo = st.text_input("Coordenadas (Cole do Maps, ex: -15.89, -52.25)")
-        obs = st.text_area("Observações / Tatuagens")
-        foto_alvo = st.file_uploader("Fotografia do Alvo", type=["png", "jpg", "jpeg"])
+        
+        st.markdown("### Endereço Fixo (Moradia)")
+        endereco = st.text_input("Endereço Residencial")
+        coordenadas_alvo = st.text_input("Localização do Endereço (Lat, Lon do Maps)")
+        
+        st.markdown("### Características e Mídia")
+        tatuagens = st.text_area("Tatuagens e Sinais (Descreva detalhes)")
+        obs = st.text_area("Observações Gerais")
+        foto_alvo = st.file_uploader("Fotografia do Alvo (Rosto/Tatuagens)", type=["png", "jpg", "jpeg"])
         
         st.markdown("---")
         st.write("🔗 **Vínculos Múltiplos**")
-        v_fatos = st.multiselect("Vincular a Fatos/Locais:", list(dic_fatos.keys()), key="alvo_fatos")
+        v_fatos = st.multiselect("Vincular a Fatos/Locais (Ex: Abordagens):", list(dic_fatos.keys()), key="alvo_fatos")
         v_veiculos = st.multiselect("Vincular a Veículos:", list(dic_veiculos.keys()), key="alvo_veiculos")
         
         if st.form_submit_button("Gravar Alvo"):
@@ -117,34 +126,47 @@ with aba_alvo:
                 url_foto = supabase.storage.from_('Fotos').get_public_url(nome_arq)
 
             lat_alvo, lon_alvo = extrair_coordenadas(coordenadas_alvo)
-            dados = {"nome": nome, "vulgo": vulgo, "cpf": cpf, "faccao_grupo": faccao, "endereco": endereco, "latitude": lat_alvo, "longitude": lon_alvo, "observacoes": obs, "caminho_foto": url_foto}
+            dados = {
+                "nome": nome, "vulgo": vulgo, "nome_mae": nome_mae, 
+                "data_nascimento": data_nascimento, "cpf": cpf, 
+                "endereco": endereco, "latitude": lat_alvo, "longitude": lon_alvo, 
+                "tatuagens_sinais": tatuagens, "observacoes": obs, "caminho_foto": url_foto
+            }
             
             try:
                 res = supabase.table("dim_pessoas").insert(dados).execute()
                 if res.data:
-                    id_novo = res.data[0].get('id_pessoa') or res.data[0].get('id')
+                    id_novo = res.data[0].get('id_pessoa')
                     for f in v_fatos:
                         supabase.table("ponte_vinculos").insert({"id_pessoa": id_novo, "id_evento": dic_fatos[f]}).execute()
                     for v in v_veiculos:
                         supabase.table("ponte_pessoas_veiculos").insert({"id_pessoa": id_novo, "id_veiculo": dic_veiculos[v]}).execute()
-                st.success(f"✅ Indivíduo gravado e vinculado!")
+                st.success(f"✅ Indivíduo gravado e vinculado com sucesso!")
             except Exception as e: st.error(f"❌ Erro: {e}")
 
-# ----------------- ABA 2: LOCAIS / FATOS -----------------
+# ----------------- ABA 2: FATOS / EVENTOS -----------------
 with aba_local:
     with st.form("form_local", clear_on_submit=True):
-        tipo_evento = st.selectbox("Tipo de Registo", ["Denúncia Biqueira", "Local de Reunião", "Apreensão", "Outro"])
-        bairro = st.text_input("Bairro / Rua / Referência")
-        coordenadas_fato = st.text_input("Coordenadas (Cole do Maps)")
-        resumo = st.text_area("Resumo da Denúncia / Observações")
-        foto_local = st.file_uploader("Fotografia do Local", type=["png", "jpg", "jpeg"])
+        st.markdown("### Registo do Evento / Local")
+        
+        lista_eventos = [
+            "LTD", "MP ATIVO", "Casa bomba", "Indivíduo Armado", 
+            "Abordagem", "Veículo com queixa de roubo ou furto", 
+            "Veículo usado em Crime", "Lideranças/Disciplina", "Ponto de Salves", "Outro"
+        ]
+        tipo_evento = st.selectbox("Tipo de Evento", lista_eventos)
+        
+        bairro = st.text_input("Bairro / Setor")
+        coordenadas_fato = st.text_input("Coordenadas Exatas (Lat, Lon do Maps)")
+        resumo = st.text_area("Detalhes da Patrulha (Resumo do que foi avistado/apreendido)")
+        foto_local = st.file_uploader("Fotografia do Local ou Abordagem (Placa/Alvo)", type=["png", "jpg", "jpeg"])
         
         st.markdown("---")
         st.write("🔗 **Vínculos Múltiplos**")
-        v_alvos = st.multiselect("Vincular a Indivíduos:", list(dic_alvos.keys()), key="fato_alvos")
-        v_veic_fato = st.multiselect("Vincular a Veículos:", list(dic_veiculos.keys()), key="fato_veic")
+        v_alvos = st.multiselect("Vincular a Indivíduos (Ex: Quem foi abordado ou alvo do MP):", list(dic_alvos.keys()), key="fato_alvos")
+        v_veic_fato = st.multiselect("Vincular a Veículos (Ex: Veículo apreendido/avistado):", list(dic_veiculos.keys()), key="fato_veic")
         
-        if st.form_submit_button("Gravar Fato"):
+        if st.form_submit_button("Gravar Evento"):
             url_foto_local = ""
             if foto_local:
                 ext = foto_local.name.split('.')[-1]
@@ -153,38 +175,56 @@ with aba_local:
                 url_foto_local = supabase.storage.from_('Fotos').get_public_url(nome_arq)
 
             lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
-            dados_fato = {"tipo_evento": tipo_evento, "bairro_setor": bairro, "latitude": lat_fato, "longitude": lon_fato, "resumo_obs": resumo, "caminho_foto": url_foto_local}
+            dados_fato = {
+                "tipo_evento": tipo_evento, "bairro_setor": bairro, 
+                "latitude": lat_fato, "longitude": lon_fato, 
+                "resumo_obs": resumo, "caminho_foto": url_foto_local
+            }
             
             try:
                 res = supabase.table("fato_eventos").insert(dados_fato).execute()
                 if res.data:
-                    id_novo = res.data[0].get('id_evento') or res.data[0].get('id')
+                    id_novo = res.data[0].get('id_evento')
                     for a in v_alvos:
                         supabase.table("ponte_vinculos").insert({"id_pessoa": dic_alvos[a], "id_evento": id_novo}).execute()
                     for v in v_veic_fato:
                         supabase.table("ponte_fatos_veiculos").insert({"id_evento": id_novo, "id_veiculo": dic_veiculos[v]}).execute()
-                st.success("✅ Fato gravado e vinculado!")
+                st.success("✅ Fato/Evento gravado e vinculado!")
             except Exception as e: st.error(f"❌ Erro: {e}")
 
 # ----------------- ABA 3: VEÍCULOS -----------------
 with aba_veiculo:
     with st.form("form_veiculo", clear_on_submit=True):
-        tipo = st.selectbox("Tipo de Veículo", ["Carro", "Moto", "Caminhonete", "Caminhão", "Outro"])
-        cor = st.text_input("Cor Predominante")
-        placa = st.text_input("Placa (Letras e Números)")
-        caracteristicas = st.text_area("Características Específicas (Adesivos, Amolgadelas, Rebaixado, etc.)")
+        st.markdown("### Registo de Veículo")
+        
+        col_tipo, col_marca = st.columns(2)
+        with col_tipo:
+            tipo_basico = st.selectbox("Tipo", ["Carro", "Moto", "Caminhonete", "Caminhão", "Outro"])
+        with col_marca:
+            marca_modelo = st.text_input("Marca/Modelo (Ex: Honda CG 160)")
+            
+        col_cor, col_placa = st.columns(2)
+        with col_cor:
+            cor = st.text_input("Cor Predominante")
+        with col_placa:
+            placa = st.text_input("Placa")
+            
+        caracteristicas = st.text_area("Características Marcantes (Adesivos, amassados, rodas, insulfilm)")
         
         st.markdown("---")
         st.write("🔗 **Vínculos Múltiplos**")
-        v_alvos_veic = st.multiselect("Vincular a Indivíduos (Proprietário/Condutor):", list(dic_alvos.keys()), key="veic_alvos")
+        v_alvos_veic = st.multiselect("Vincular a Indivíduos (Dono/Condutor):", list(dic_alvos.keys()), key="veic_alvos")
         v_fatos_veic = st.multiselect("Vincular a Fatos (Localizado/Apreendido em):", list(dic_fatos.keys()), key="veic_fatos")
         
         if st.form_submit_button("Gravar Veículo"):
-            dados_veic = {"tipo": tipo, "cor": cor, "placa": placa, "caracteristicas": caracteristicas}
+            # Junta o Tipo com a Marca para salvar no banco como "Moto - Honda CG 160"
+            tipo_final = f"{tipo_basico} - {marca_modelo}" if marca_modelo else tipo_basico
+            
+            dados_veic = {"tipo": tipo_final, "cor": cor, "placa": placa, "caracteristicas": caracteristicas}
             try:
                 res = supabase.table("dim_veiculos").insert(dados_veic).execute()
                 if res.data:
-                    id_novo = res.data[0].get('id_veiculo') or res.data[0].get('id')
+                    id_novo = res.data[0].get('id_veiculo')
                     for a in v_alvos_veic:
                         supabase.table("ponte_pessoas_veiculos").insert({"id_pessoa": dic_alvos[a], "id_veiculo": id_novo}).execute()
                     for f in v_fatos_veic:
