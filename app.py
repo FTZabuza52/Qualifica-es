@@ -137,6 +137,23 @@ aba_alvo, aba_local, aba_veiculo, aba_gestao = st.tabs(["👤 Indivíduo", "🏠
 
 # ----------------- ABA 1: PESSOAS -----------------
 with aba_alvo:
+    # --- SISTEMA DE PREVENÇÃO DE DUPLICIDADE ---
+    st.markdown("### 🔍 Verificação Prévia")
+    busca_pessoa = st.text_input("Digite o Nome, Vulgo ou CPF antes de cadastrar para evitar duplicidade:")
+    
+    if busca_pessoa and len(busca_pessoa) >= 3:
+        termo = busca_pessoa.lower()
+        similares = [p for p in lista_alvos_bruta if termo in str(p.get('nome', '')).lower() or termo in str(p.get('vulgo', '')).lower() or termo in str(p.get('cpf', '')).lower()]
+        
+        if similares:
+            st.warning(f"⚠️ **Atenção! Encontrámos {len(similares)} registo(s) semelhante(s):**")
+            for p in similares:
+                st.markdown(f"• **{p.get('nome')}** (Vulgo: _{p.get('vulgo', 'N/D')}_) | CPF: `{p.get('cpf', 'N/D')}`")
+        else:
+            st.success("✔️ Nenhum alvo encontrado. Pode prosseguir com o cadastro.")
+    
+    st.markdown("---")
+    
     with st.form("form_alvo", clear_on_submit=True):
         st.markdown("### Qualificação do Alvo")
         nome = st.text_input("Nome Completo")
@@ -231,6 +248,23 @@ with aba_local:
 
 # ----------------- ABA 3: VEÍCULOS -----------------
 with aba_veiculo:
+    # --- SISTEMA DE PREVENÇÃO DE DUPLICIDADE DE PLACA ---
+    st.markdown("### 🔍 Verificação Prévia de Placa")
+    busca_placa = st.text_input("Digite a Placa para verificar se o veículo já está cadastrado:")
+    
+    if busca_placa and len(busca_placa) >= 3:
+        termo_placa = busca_placa.lower()
+        similares_v = [v for v in lista_veiculos_bruta if termo_placa in str(v.get('placa', '')).lower()]
+        
+        if similares_v:
+            st.warning(f"⚠️ **Atenção! Encontrámos {len(similares_v)} veículo(s) com placa semelhante:**")
+            for v in similares_v:
+                st.markdown(f"• **{v.get('placa')}** | {v.get('cor')} {v.get('tipo')}")
+        else:
+            st.success("✔️ Nenhuma placa semelhante encontrada. Pode prosseguir com o cadastro.")
+            
+    st.markdown("---")
+
     with st.form("form_veiculo", clear_on_submit=True):
         st.markdown("### Registo de Veículo")
         col_tipo, col_marca = st.columns(2)
@@ -246,7 +280,7 @@ with aba_veiculo:
         
         if st.form_submit_button("Gravar Veículo"):
             tipo_final = f"{tipo_basico} - {marca_modelo}" if marca_modelo else tipo_basico
-            dados_veic = {"tipo": tipo_final, "cor": cor, "placa": placa, "caracteristicas": caracteristicas}
+            dados_veic = {"tipo": tipo_final, "cor": cor, "placa": placa.upper(), "caracteristicas": caracteristicas}
             try:
                 res = supabase.table("dim_veiculos").insert(dados_veic).execute()
                 if res.data:
