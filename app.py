@@ -334,10 +334,8 @@ with aba_gestao:
                     st.markdown("---")
                     if st.button("🗑️ EXCLUIR ALVO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_alvo.get('caminho_foto'))
-                        # Desamarra a teia primeiro
                         supabase.table("ponte_vinculos").delete().eq("id_pessoa", id_p).execute()
                         supabase.table("ponte_pessoas_veiculos").delete().eq("id_pessoa", id_p).execute()
-                        # Exclui o alvo
                         supabase.table("dim_pessoas").delete().eq("id_pessoa", id_p).execute()
                         st.success("💀 Alvo e mídias erradicados da base.")
                         st.rerun()
@@ -371,7 +369,6 @@ with aba_gestao:
                         with col_up_t:
                             up_tipo = st.text_input("Tipo Evento", value=dados_fato.get('tipo_evento') or "")
                             
-                        # Tratamento para exibir a data atual na edição
                         data_str = dados_fato.get('data_hora')
                         try:
                             if data_str:
@@ -385,14 +382,19 @@ with aba_gestao:
                             up_data = st.date_input("Data do Evento", value=data_obj)
                             
                         up_bairro = st.text_input("Bairro", value=dados_fato.get('bairro_setor') or "")
+                        lat_f, lon_f = dados_fato.get('latitude') or "", dados_fato.get('longitude') or ""
+                        up_coords_fato = st.text_input("Coordenadas Exatas (Lat, Lon)", value=f"{lat_f}, {lon_f}" if lat_f and lon_f else "")
                         up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
                         
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
+                                lat_f_nova, lon_f_nova = extrair_coordenadas(up_coords_fato)
                                 supabase.table("fato_eventos").update({
                                     "tipo_evento": up_tipo, 
                                     "data_hora": up_data.isoformat(),
                                     "bairro_setor": up_bairro, 
+                                    "latitude": lat_f_nova,
+                                    "longitude": lon_f_nova,
                                     "resumo_obs": up_resumo
                                 }).eq("id_evento", id_f).execute()
                                 st.success("✅ Dados atualizados!")
@@ -402,10 +404,8 @@ with aba_gestao:
                     st.markdown("---")
                     if st.button("🗑️ EXCLUIR EVENTO DEFINITIVAMENTE", type="primary"):
                         apagar_fotos_bucket(dados_fato.get('caminho_foto'))
-                        # Desamarra a teia primeiro
                         supabase.table("ponte_vinculos").delete().eq("id_evento", id_f).execute()
                         supabase.table("ponte_fatos_veiculos").delete().eq("id_evento", id_f).execute()
-                        # Exclui o evento
                         supabase.table("fato_eventos").delete().eq("id_evento", id_f).execute()
                         st.success("💀 Evento e mídias erradicados da base.")
                         st.rerun()
@@ -430,7 +430,7 @@ with aba_gestao:
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 supabase.table("dim_veiculos").update({
-                                    "tipo": up_tipo_v, "cor": up_cor_v, "placa": up_placa_v, "caracteristicas": up_carac_v
+                                    "tipo": up_tipo_v, "cor": up_cor_v, "placa": up_placa_v.upper(), "caracteristicas": up_carac_v
                                 }).eq("id_veiculo", id_v).execute()
                                 st.success("✅ Dados atualizados!")
                                 st.rerun()
@@ -438,10 +438,9 @@ with aba_gestao:
                     
                     st.markdown("---")
                     if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
-                        # Desamarra a teia primeiro
                         supabase.table("ponte_pessoas_veiculos").delete().eq("id_veiculo", id_v).execute()
                         supabase.table("ponte_fatos_veiculos").delete().eq("id_veiculo", id_v).execute()
-                        # Exclui o veículo
                         supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
                         st.success("💀 Veículo erradicado da base.")
                         st.rerun()
+
