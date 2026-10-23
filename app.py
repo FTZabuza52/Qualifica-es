@@ -137,9 +137,8 @@ aba_alvo, aba_local, aba_veiculo, aba_gestao = st.tabs(["👤 Indivíduo", "🏠
 
 # ----------------- ABA 1: PESSOAS -----------------
 with aba_alvo:
-    # --- SISTEMA DE PREVENÇÃO DE DUPLICIDADE ---
     st.markdown("### 🔍 Verificação Prévia")
-    busca_pessoa = st.text_input("Digite o Nome, Vulgo ou CPF antes de cadastrar para evitar duplicidade:")
+    busca_pessoa = st.text_input("Digite o Nome, Vulgo ou CPF antes de cadastrar para evitar duplicidade:", key="busca_pes_nova")
     
     if busca_pessoa and len(busca_pessoa) >= 3:
         termo = busca_pessoa.lower()
@@ -248,9 +247,8 @@ with aba_local:
 
 # ----------------- ABA 3: VEÍCULOS -----------------
 with aba_veiculo:
-    # --- SISTEMA DE PREVENÇÃO DE DUPLICIDADE DE PLACA ---
     st.markdown("### 🔍 Verificação Prévia de Placa")
-    busca_placa = st.text_input("Digite a Placa para verificar se o veículo já está cadastrado:")
+    busca_placa = st.text_input("Digite a Placa para verificar se o veículo já está cadastrado:", key="busca_placa_nova")
     
     if busca_placa and len(busca_placa) >= 3:
         termo_placa = busca_placa.lower()
@@ -319,15 +317,48 @@ with aba_gestao:
                         up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
                         up_obs = st.text_area("Observações Gerais / Passagens", value=dados_alvo.get('observacoes') or "")
                         
+                        # --- GESTÃO DE FOTOS NA EDIÇÃO ---
+                        st.markdown("---")
+                        st.markdown("🖼️ **Gestão de Fotografias do Alvo**")
+                        foto_atual = dados_alvo.get('caminho_foto')
+                        if foto_atual:
+                            st.info("ℹ️ Este cadastro já possui fotografia(s) armazenada(s).")
+                        else:
+                            st.warning("⚠️ Este cadastro NÃO possui fotografias.")
+                        
+                        modo_foto = st.radio("Ação com Fotos:", ["Manter Atual", "Adicionar Novas Imagens", "Substituir / Atualizar Foto (Apaga a anterior)"], horizontal=True)
+                        novas_fotos_up = st.file_uploader("Selecione os arquivos de imagem:", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="up_fotos_pes")
+
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 lat_nova, lon_nova = extrair_coordenadas(up_coords)
+                                url_foto_final = foto_atual # Mantém por padrão
+
+                                if novas_fotos_up:
+                                    urls_novas = []
+                                    for foto in novas_fotos_up:
+                                        ext = foto.name.split('.')[-1]
+                                        nome_arq = f"alvos_{uuid.uuid4()}.{ext}"
+                                        supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                                        urls_novas.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
+                                    
+                                    str_novas = ", ".join(urls_novas)
+
+                                    if modo_foto == "Substituir / Atualizar Foto (Apaga a anterior)":
+                                        apagar_fotos_bucket(foto_atual) # Remove antiga do bucket
+                                        url_foto_final = str_novas
+                                    elif modo_foto == "Adicionar Novas Imagens":
+                                        if foto_atual:
+                                            url_foto_final = f"{foto_atual}, {str_novas}"
+                                        else:
+                                            url_foto_final = str_novas
+
                                 supabase.table("dim_pessoas").update({
                                     "nome": up_nome, "vulgo": up_vulgo, "nome_mae": up_mae, "data_nascimento": up_nasc,
                                     "cpf": up_cpf, "endereco": up_endereco, "latitude": lat_nova, "longitude": lon_nova,
-                                    "tatuagens_sinais": up_tattoo, "observacoes": up_obs
+                                    "tatuagens_sinais": up_tattoo, "observacoes": up_obs, "caminho_foto": url_foto_final
                                 }).eq("id_pessoa", id_p).execute()
-                                st.success("✅ Dados de qualificação atualizados!")
+                                st.success("✅ Dados e mídias de qualificação atualizados!")
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
                     
@@ -386,18 +417,50 @@ with aba_gestao:
                         up_coords_fato = st.text_input("Coordenadas Exatas (Lat, Lon)", value=f"{lat_f}, {lon_f}" if lat_f and lon_f else "")
                         up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
                         
+                        # --- GESTÃO DE FOTOS NO FATO ---
+                        st.markdown("---")
+                        st.markdown("🖼️ **Gestão de Fotografias do Fato/Local**")
+                        foto_atual_fato = dados_fato.get('caminho_foto')
+                        if foto_atual_fato: st.info("ℹ️ Este fato possui imagem(ns) anexada(s).")
+                        else: st.warning("⚠️ Este fato NÃO possui imagens.")
+
+                        modo_foto_fato = st.radio("Ação com Fotos:", ["Manter Atual", "Adicionar Novas Imagens", "Substituir / Atualizar Foto (Apaga a anterior)"], horizontal=True, key="radio_foto_fato")
+                        novas_fotos_fato_up = st.file_uploader("Selecione arquivos de imagem:", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="up_fotos_fat")
+
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 lat_f_nova, lon_f_nova = extrair_coordenadas(up_coords_fato)
+                                url_foto_fato_final = foto_atual_fato
+
+                                if novas_fotos_fato_up:
+                                    urls_novas_f = []
+                                    for foto in novas_fotos_fato_up:
+                                        ext = foto.name.split('.')[-1]
+                                        nome_arq = f"locais_{uuid.uuid4()}.{ext}"
+                                        supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                                        urls_novas_f.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
+                                    
+                                    str_novas_f = ", ".join(urls_novas_f)
+
+                                    if modo_foto_fato == "Substituir / Atualizar Foto (Apaga a anterior)":
+                                        apagar_fotos_bucket(foto_atual_fato)
+                                        url_foto_fato_final = str_novas_f
+                                    elif modo_foto_fato == "Adicionar Novas Imagens":
+                                        if foto_atual_fato:
+                                            url_foto_fato_final = f"{foto_atual_fato}, {str_novas_f}"
+                                        else:
+                                            url_foto_fato_final = str_novas_f
+
                                 supabase.table("fato_eventos").update({
                                     "tipo_evento": up_tipo, 
                                     "data_hora": up_data.isoformat(),
                                     "bairro_setor": up_bairro, 
                                     "latitude": lat_f_nova,
                                     "longitude": lon_f_nova,
-                                    "resumo_obs": up_resumo
+                                    "resumo_obs": up_resumo,
+                                    "caminho_foto": url_foto_fato_final
                                 }).eq("id_evento", id_f).execute()
-                                st.success("✅ Dados atualizados!")
+                                st.success("✅ Dados e mídias do evento atualizados!")
                                 st.rerun()
                             except Exception as e: st.error(f"Erro: {e}")
                     
@@ -443,4 +506,3 @@ with aba_gestao:
                         supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
                         st.success("💀 Veículo erradicado da base.")
                         st.rerun()
-
