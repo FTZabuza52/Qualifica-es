@@ -2,7 +2,6 @@ streamlit
 supabase
 imagehash
 Pillow
-face_recognition
 opencv-python-headless
 numpy
 requests
