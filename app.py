@@ -497,7 +497,7 @@ with aba_busca_visual:
                 try:
                     bytes_entrada = arquivo_analise.getvalue()
 
-                    # 1. PROCESSAMENTO DE INDIVÍDUOS (ORB)
+                   # 1. PROCESSAMENTO DE INDIVÍDUOS (ORB)
                     alvo_pessoa_match = None
                     max_matches_pessoa = 0
                     url_match_foto_p = ""
@@ -513,9 +513,10 @@ with aba_busca_visual:
                                     resp_p = requests.get(u_p, timeout=4)
                                     if resp_p.status_code == 200:
                                         qtd = calcular_matches_orb(bytes_entrada, resp_p.content)
+                                        # Só substitui se esta foto for estritamente superior à melhor já encontrada
                                         if qtd > max_matches_pessoa:
                                             max_matches_pessoa = qtd
-                                            alvo_pessoa_match = p
+                                            alvo_pessoa_match = p.copy()  # Isola os dados exatos do alvo titular
                                             url_match_foto_p = u_p
                                 except: pass
                             prog_p.progress((idx + 1) / total_p)
