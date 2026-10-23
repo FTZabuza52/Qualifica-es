@@ -7,7 +7,6 @@ from PIL import Image
 import io
 import numpy as np
 import requests
-import face_recognition
 import cv2
 
 # ==========================================
@@ -93,7 +92,7 @@ def checar_mandado_ativo(id_pessoa):
     except: pass
     return False
 
-def calcular_matches_orb_local(bytes_img1, bytes_img2, max_features=1000, limiar_distancia=45):
+def calcular_matches_orb(bytes_img1, bytes_img2, max_features=1000, limiar_distancia=45):
     try:
         nparr1 = np.frombuffer(bytes_img1, np.uint8)
         nparr2 = np.frombuffer(bytes_img2, np.uint8)
@@ -183,13 +182,13 @@ except Exception as e:
 # ==========================================
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    try: st.image("logo.jpg", use_container_width=True)
+    try: st.image("logo.jpg", width="stretch")
     except: pass
 st.markdown("<h2 style='text-align: center;'>Sistema de Inteligência FT-20</h2>", unsafe_allow_html=True)
 st.divider()
 
 aba_alvo, aba_local, aba_veiculo, aba_gestao, aba_busca_visual = st.tabs([
-    "👤 Indivíduo", "🏠 Fato/Local", "🚗 Veículo", "⚙️ Gestão", "📸 Reconhecimento Facial / Visual"
+    "👤 Indivíduo", "🏠 Fato/Local", "🚗 Veículo", "⚙️ Gestão", "📸 Busca Visual (ORB)"
 ])
 
 # ----------------- ABA 1: PESSOAS -----------------
@@ -471,96 +470,86 @@ with aba_gestao:
                         st.success("💀 Veículo erradicado.")
                         st.rerun()
 
-# ----------------- ABA 5: RECONHECIMENTO FACIAL E BUSCA DE FATOS/LOCAIS -----------------
+# ----------------- ABA 5: BUSCA VISUAL COMPLETA VIA ORB -----------------
 with aba_busca_visual:
-    st.markdown("### 📸 Inteligência Visual Híbrida (Indivíduos & Fatos/Locais)")
-    st.caption("O motor biométrico cruza feições faciais de pessoas, enquanto o motor geométrico (ORB) reconhece fachadas, quiosques, veículos e locais de interesse.")
+    st.markdown("### 📸 Inteligência Visual (Indivíduos & Fatos/Locais)")
+    st.caption("O motor geométrico ORB analisa pontos característicos em comum para identificar pessoas, veículos, fachadas e locais.")
 
     tipo_captura = st.radio("Origem da Imagem:", ["📁 Carregar Arquivo (Galeria/WhatsApp)", "📷 Tirar Foto Agora (Câmera)"], horizontal=True)
     
     arquivo_analise = None
     if tipo_captura == "📁 Carregar Arquivo (Galeria/WhatsApp)":
-        arquivo_analise = st.file_uploader("Selecione a imagem para cruzamento:", type=["jpg", "jpeg", "png"], key="upload_facial_fato")
+        arquivo_analise = st.file_uploader("Selecione a imagem para cruzamento:", type=["jpg", "jpeg", "png"], key="upload_visual_orb")
     else:
         arquivo_analise = st.camera_input("Enquadre o indivíduo ou o local de interesse:")
 
     if arquivo_analise is not None:
         col_img1, col_img2 = st.columns([1, 2])
         with col_img1:
-            st.image(arquivo_analise, caption="Foto para Varredura", use_container_width=True)
+            st.image(arquivo_analise, caption="Foto para Varredura", width="stretch")
             
         with col_img2:
-            st.info("ℹ️ A varredura analisará biometria facial e padrões geométricos de pontos físicos.")
-            botao_varrer = st.button("🚀 Iniciar Varredura de Inteligência", type="primary", use_container_width=True)
+            st.info("ℹ️ A varredura analisará pontos estruturais contra toda a base de Pessoas e Fatos da FT-20.")
+            botao_varrer = st.button("🚀 Iniciar Varredura de Inteligência", type="primary", width="stretch")
 
         if botao_varrer:
-            with st.spinner("🔍 Analisando biometria e estrutura de locais na base de dados..."):
+            with st.spinner("🔍 Analisando pontos característicos na base de dados..."):
                 try:
                     bytes_entrada = arquivo_analise.getvalue()
-                    
-                    # 1. PROCESSAMENTO FACIAL (INDIVÍDUOS)
-                    img_entrada = face_recognition.load_image_file(io.BytesIO(bytes_entrada))
-                    encodings_entrada = face_recognition.face_encodings(img_entrada)
 
+                    # 1. PROCESSAMENTO DE INDIVÍDUOS (ORB)
                     alvo_pessoa_match = None
-                    menor_dist_facial = 1.0
-                    url_match_foto = ""
+                    max_matches_pessoa = 0
+                    url_match_foto_p = ""
 
-                    if len(encodings_entrada) > 0:
-                        encoding_alvo = encodings_entrada[0]
-                        alvos_com_foto = [p for p in lista_alvos_bruta if p.get('caminho_foto')]
-                        
-                        prog_facial = st.progress(0, text="Processando biometria facial de alvos...")
-                        total_alvos = len(alvos_com_foto) if alvos_com_foto else 1
-
+                    alvos_com_foto = [p for p in lista_alvos_bruta if p.get('caminho_foto')]
+                    if alvos_com_foto:
+                        prog_p = st.progress(0, text="Varrendo base de indivíduos...")
+                        total_p = len(alvos_com_foto)
                         for idx, p in enumerate(alvos_com_foto):
-                            urls = [u.strip() for u in p['caminho_foto'].split(',') if u.strip()]
-                            for url in urls:
+                            urls_p = [u.strip() for u in p['caminho_foto'].split(',') if u.strip()]
+                            for u_p in urls_p:
                                 try:
-                                    resp = requests.get(url, timeout=4)
-                                    if resp.status_code == 200:
-                                        img_banco = face_recognition.load_image_file(io.BytesIO(resp.content))
-                                        enc_banco = face_recognition.face_encodings(img_banco)
-                                        if enc_banco:
-                                            dist = face_recognition.face_distance([enc_banco[0]], encoding_alvo)[0]
-                                            if dist < menor_dist_facial:
-                                                menor_dist_facial = dist
-                                                alvo_pessoa_match = p
-                                                url_match_foto = url
+                                    resp_p = requests.get(u_p, timeout=4)
+                                    if resp_p.status_code == 200:
+                                        qtd = calcular_matches_orb(bytes_entrada, resp_p.content)
+                                        if qtd > max_matches_pessoa:
+                                            max_matches_pessoa = qtd
+                                            alvo_pessoa_match = p
+                                            url_match_foto_p = u_p
                                 except: pass
-                            prog_facial.progress((idx + 1) / total_alvos)
-                        prog_facial.empty()
+                            prog_p.progress((idx + 1) / total_p)
+                        prog_p.empty()
 
-                    # 2. PROCESSAMENTO GEOMÉTRICO ORB (FATOS / LOCAIS / PONTOS)
+                    # 2. PROCESSAMENTO DE FATOS / LOCAIS (ORB)
                     fato_local_match = None
-                    max_matches_orb = 0
-                    url_match_fato = ""
+                    max_matches_local = 0
+                    url_match_foto_f = ""
 
                     fatos_com_foto = [f for f in lista_fatos_bruta if f.get('caminho_foto')]
                     if fatos_com_foto:
-                        prog_local = st.progress(0, text="Varrendo padrões estruturais de Fatos/Locais...")
-                        total_fatos = len(fatos_com_foto)
+                        prog_f = st.progress(0, text="Varrendo base de Fatos/Locais...")
+                        total_f = len(fatos_com_foto)
                         for idx, f in enumerate(fatos_com_foto):
                             urls_f = [u.strip() for u in f['caminho_foto'].split(',') if u.strip()]
                             for u_f in urls_f:
                                 try:
                                     resp_f = requests.get(u_f, timeout=4)
                                     if resp_f.status_code == 200:
-                                        qtd_pts = calcular_matches_orb_local(bytes_entrada, resp_f.content)
-                                        if qtd_pts > max_matches_orb:
-                                            max_matches_orb = qtd_pts
+                                        qtd_f = calcular_matches_orb(bytes_entrada, resp_f.content)
+                                        if qtd_f > max_matches_local:
+                                            max_matches_local = qtd_f
                                             fato_local_match = f
-                                            url_match_fato = u_f
+                                            url_match_foto_f = u_f
                                 except: pass
-                            prog_local.progress((idx + 1) / total_fatos)
-                        prog_local.empty()
+                            prog_f.progress((idx + 1) / total_f)
+                        prog_f.empty()
 
                     # ========================================================
-                    # EXIBIÇÃO DE RESULTADOS: CASO 1 - INDIVÍDUO IDENTIFICADO
+                    # EXIBIÇÃO: INDIVÍDUO IDENTIFICADO (>= 20 pontos)
                     # ========================================================
-                    if alvo_pessoa_match and menor_dist_facial <= 0.60:
-                        precisao = round((1 - menor_dist_facial) * 100, 1)
-                        st.success(f"🎯 **INDIVÍDUO IDENTIFICADO COM SUCESSO! ({precisao}% de Precisão Biométrica)**")
+                    if alvo_pessoa_match and max_matches_pessoa >= 20:
+                        st.success(f"🎯 **INDIVÍDUO IDENTIFICADO VIA ORB! ({max_matches_pessoa} pontos característicos coincidentes)**")
 
                         mp_obs = checar_mandado_ativo(alvo_pessoa_match['id_pessoa'])
                         if mp_obs:
@@ -570,7 +559,7 @@ with aba_busca_visual:
                         st.markdown("### 📋 Ficha de Qualificação Integral")
                         c_card_foto, c_card_dados = st.columns([1, 2])
                         with c_card_foto:
-                            st.image(url_match_foto, caption=f"Registro: {alvo_pessoa_match.get('nome')}", use_container_width=True)
+                            st.image(url_match_foto_p, caption=f"Registro: {alvo_pessoa_match.get('nome')}", width="stretch")
 
                         with c_card_dados:
                             st.markdown(f"**Nome:** `{alvo_pessoa_match.get('nome')}`")
@@ -617,7 +606,7 @@ with aba_busca_visual:
                                         with col_f1:
                                             if fd.get('caminho_foto'):
                                                 foto_fato_url = fd.get('caminho_foto').split(',')[0].strip()
-                                                st.image(foto_fato_url, caption=f"Foto do Local/Fato", use_container_width=True)
+                                                st.image(foto_fato_url, caption=f"Foto do Local/Fato", width="stretch")
                                             else:
                                                 st.caption("Sem foto anexada a este fato.")
                                         
@@ -647,16 +636,16 @@ with aba_busca_visual:
                             st.caption(f"Erro ao listar fatos vinculados: {e}")
 
                     # ========================================================
-                    # EXIBIÇÃO DE RESULTADOS: CASO 2 - LOCAL/FATO IDENTIFICADO
+                    # EXIBIÇÃO: LOCAL/FATO IDENTIFICADO (>= 20 pontos)
                     # ========================================================
-                    elif fato_local_match and max_matches_orb >= 20:
-                        st.success(f"🏠 **LOCAL/FATO RECONHECIDO (ORB)! ({max_matches_orb} pontos geométricos coincidentes)**")
+                    elif fato_local_match and max_matches_local >= 20:
+                        st.success(f"🏠 **LOCAL/FATO RECONHECIDO (ORB)! ({max_matches_local} pontos geométricos coincidentes)**")
                         
                         st.markdown("---")
                         st.markdown("### 📍 Detalhes do Fato / Ponto de Interesse")
                         c_loc_foto, c_loc_dados = st.columns([1, 2])
                         with c_loc_foto:
-                            st.image(url_match_fato, caption=f"Registro do Local", use_container_width=True)
+                            st.image(url_match_foto_f, caption=f"Registro do Local", width="stretch")
                             
                         with c_loc_dados:
                             tipo_f = fato_local_match.get('tipo_evento', '')
@@ -698,7 +687,7 @@ with aba_busca_visual:
                         except: pass
 
                     else:
-                        st.warning(f"❌ Nenhuma compatibilidade facial confirmada (Menor distância: {round(menor_dist_facial, 2)}) e nenhum ponto físico coincidente (Máx ORB: {max_matches_orb}).")
+                        st.warning(f"❌ Nenhuma compatibilidade visual confirmada (Máx pontos Pessoa: {max_matches_pessoa} | Máx pontos Local: {max_matches_local} - corte mínimo: 20).")
 
                 except Exception as e:
                     st.error(f"Erro durante a varredura visual: {e}")
