@@ -2,6 +2,9 @@ import streamlit as st
 from supabase import create_client, Client
 import uuid
 from datetime import datetime, date
+import imagehash
+from PIL import Image
+import io
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA
@@ -68,6 +71,13 @@ def apagar_fotos_bucket(string_urls):
             supabase.storage.from_('Fotos').remove(arquivos_alvo)
         except Exception as e:
             st.error(f"Aviso - Falha ao limpar bucket: {e}")
+
+def gerar_hash_foto(foto_bytes):
+    try:
+        imagem = Image.open(io.BytesIO(foto_bytes))
+        return str(imagehash.average_hash(imagem))
+    except:
+        return None
 
 # ==========================================
 # RECOLHA DE DADOS (DICIONÁRIOS BLINDADOS)
@@ -174,18 +184,27 @@ with aba_alvo:
         
         if st.form_submit_button("Gravar Alvo"):
             urls_fotos = []
+            hashes_fotos = []
             if fotos_alvo:
                 for foto in fotos_alvo:
+                    conteudo = foto.read()
+                    h = gerar_hash_foto(conteudo)
+                    if h: hashes_fotos.append(h)
+                    
                     ext = foto.name.split('.')[-1]
                     nome_arq = f"alvos_{uuid.uuid4()}.{ext}"
-                    supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                    supabase.storage.from_('Fotos').upload(nome_arq, conteudo, {"content-type": foto.type})
                     urls_fotos.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
+                    
             url_foto_final = ", ".join(urls_fotos)
+            hash_final = ", ".join(hashes_fotos) if hashes_fotos else None
             lat_alvo, lon_alvo = extrair_coordenadas(coordenadas_alvo)
+            
             dados = {
                 "nome": nome, "vulgo": vulgo, "nome_mae": nome_mae, "data_nascimento": data_nascimento, 
                 "cpf": cpf, "endereco": endereco, "latitude": lat_alvo, "longitude": lon_alvo, 
-                "tatuagens_sinais": tatuagens, "observacoes": obs, "caminho_foto": url_foto_final
+                "tatuagens_sinais": tatuagens, "observacoes": obs, "caminho_foto": url_foto_final,
+                "foto_hash": hash_final
             }
             try:
                 res = supabase.table("dim_pessoas").insert(dados).execute()
@@ -218,13 +237,20 @@ with aba_local:
         
         if st.form_submit_button("Gravar Evento"):
             urls_fotos_local = []
+            hashes_fotos_local = []
             if fotos_local:
                 for foto in fotos_local:
+                    conteudo = foto.read()
+                    h = gerar_hash_foto(conteudo)
+                    if h: hashes_fotos_local.append(h)
+                    
                     ext = foto.name.split('.')[-1]
                     nome_arq = f"locais_{uuid.uuid4()}.{ext}"
-                    supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                    supabase.storage.from_('Fotos').upload(nome_arq, conteudo, {"content-type": foto.type})
                     urls_fotos_local.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
+                    
             url_foto_local_final = ", ".join(urls_fotos_local)
+            hash_local_final = ", ".join(hashes_fotos_local) if hashes_fotos_local else None
             lat_fato, lon_fato = extrair_coordenadas(coordenadas_fato)
             
             dados_fato = {
@@ -234,7 +260,8 @@ with aba_local:
                 "latitude": lat_fato, 
                 "longitude": lon_fato, 
                 "resumo_obs": resumo, 
-                "caminho_foto": url_foto_local_final
+                "caminho_foto": url_foto_local_final,
+                "foto_hash": hash_local_final
             }
             try:
                 res = supabase.table("fato_eventos").insert(dados_fato).execute()
@@ -317,14 +344,12 @@ with aba_gestao:
                         up_tattoo = st.text_area("Tatuagens", value=dados_alvo.get('tatuagens_sinais') or "")
                         up_obs = st.text_area("Observações Gerais / Passagens", value=dados_alvo.get('observacoes') or "")
                         
-                        # --- GESTÃO DE FOTOS NA EDIÇÃO ---
                         st.markdown("---")
                         st.markdown("🖼️ **Gestão de Fotografias do Alvo**")
                         foto_atual = dados_alvo.get('caminho_foto')
-                        if foto_atual:
-                            st.info("ℹ️ Este cadastro já possui fotografia(s) armazenada(s).")
-                        else:
-                            st.warning("⚠️ Este cadastro NÃO possui fotografias.")
+                        hash_atual = dados_alvo.get('foto_hash')
+                        if foto_atual: st.info("ℹ️ Este cadastro já possui fotografia(s) armazenada(s).")
+                        else: st.warning("⚠️ Este cadastro NÃO possui fotografias.")
                         
                         modo_foto = st.radio("Ação com Fotos:", ["Manter Atual", "Adicionar Novas Imagens", "Substituir / Atualizar Foto (Apaga a anterior)"], horizontal=True)
                         novas_fotos_up = st.file_uploader("Selecione os arquivos de imagem:", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="up_fotos_pes")
@@ -332,31 +357,38 @@ with aba_gestao:
                         if st.form_submit_button("🔄 Salvar Alterações"):
                             try:
                                 lat_nova, lon_nova = extrair_coordenadas(up_coords)
-                                url_foto_final = foto_atual # Mantém por padrão
+                                url_foto_final = foto_atual
+                                hash_foto_final = hash_atual
 
                                 if novas_fotos_up:
                                     urls_novas = []
+                                    hashes_novos = []
                                     for foto in novas_fotos_up:
+                                        conteudo = foto.read()
+                                        h = gerar_hash_foto(conteudo)
+                                        if h: hashes_novos.append(h)
+                                        
                                         ext = foto.name.split('.')[-1]
                                         nome_arq = f"alvos_{uuid.uuid4()}.{ext}"
-                                        supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                                        supabase.storage.from_('Fotos').upload(nome_arq, conteudo, {"content-type": foto.type})
                                         urls_novas.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
                                     
                                     str_novas = ", ".join(urls_novas)
+                                    str_hashes_novos = ", ".join(hashes_novos)
 
                                     if modo_foto == "Substituir / Atualizar Foto (Apaga a anterior)":
-                                        apagar_fotos_bucket(foto_atual) # Remove antiga do bucket
+                                        apagar_fotos_bucket(foto_atual)
                                         url_foto_final = str_novas
+                                        hash_foto_final = str_hashes_novos
                                     elif modo_foto == "Adicionar Novas Imagens":
-                                        if foto_atual:
-                                            url_foto_final = f"{foto_atual}, {str_novas}"
-                                        else:
-                                            url_foto_final = str_novas
+                                        url_foto_final = f"{foto_atual}, {str_novas}" if foto_atual else str_novas
+                                        hash_foto_final = f"{hash_atual}, {str_hashes_novos}" if hash_atual else str_hashes_novos
 
                                 supabase.table("dim_pessoas").update({
                                     "nome": up_nome, "vulgo": up_vulgo, "nome_mae": up_mae, "data_nascimento": up_nasc,
                                     "cpf": up_cpf, "endereco": up_endereco, "latitude": lat_nova, "longitude": lon_nova,
-                                    "tatuagens_sinais": up_tattoo, "observacoes": up_obs, "caminho_foto": url_foto_final
+                                    "tatuagens_sinais": up_tattoo, "observacoes": up_obs, "caminho_foto": url_foto_final,
+                                    "foto_hash": hash_foto_final
                                 }).eq("id_pessoa", id_p).execute()
                                 st.success("✅ Dados e mídias de qualificação atualizados!")
                                 st.rerun()
@@ -417,10 +449,10 @@ with aba_gestao:
                         up_coords_fato = st.text_input("Coordenadas Exatas (Lat, Lon)", value=f"{lat_f}, {lon_f}" if lat_f and lon_f else "")
                         up_resumo = st.text_area("Resumo", value=dados_fato.get('resumo_obs') or "")
                         
-                        # --- GESTÃO DE FOTOS NO FATO ---
                         st.markdown("---")
                         st.markdown("🖼️ **Gestão de Fotografias do Fato/Local**")
                         foto_atual_fato = dados_fato.get('caminho_foto')
+                        hash_atual_fato = dados_fato.get('foto_hash')
                         if foto_atual_fato: st.info("ℹ️ Este fato possui imagem(ns) anexada(s).")
                         else: st.warning("⚠️ Este fato NÃO possui imagens.")
 
@@ -431,25 +463,31 @@ with aba_gestao:
                             try:
                                 lat_f_nova, lon_f_nova = extrair_coordenadas(up_coords_fato)
                                 url_foto_fato_final = foto_atual_fato
+                                hash_foto_fato_final = hash_atual_fato
 
                                 if novas_fotos_fato_up:
                                     urls_novas_f = []
+                                    hashes_novos_f = []
                                     for foto in novas_fotos_fato_up:
+                                        conteudo = foto.read()
+                                        h = gerar_hash_foto(conteudo)
+                                        if h: hashes_novos_f.append(h)
+                                        
                                         ext = foto.name.split('.')[-1]
                                         nome_arq = f"locais_{uuid.uuid4()}.{ext}"
-                                        supabase.storage.from_('Fotos').upload(nome_arq, foto.read(), {"content-type": foto.type})
+                                        supabase.storage.from_('Fotos').upload(nome_arq, conteudo, {"content-type": foto.type})
                                         urls_novas_f.append(supabase.storage.from_('Fotos').get_public_url(nome_arq))
                                     
                                     str_novas_f = ", ".join(urls_novas_f)
+                                    str_hashes_novos_f = ", ".join(hashes_novos_f)
 
                                     if modo_foto_fato == "Substituir / Atualizar Foto (Apaga a anterior)":
                                         apagar_fotos_bucket(foto_atual_fato)
                                         url_foto_fato_final = str_novas_f
+                                        hash_foto_fato_final = str_hashes_novos_f
                                     elif modo_foto_fato == "Adicionar Novas Imagens":
-                                        if foto_atual_fato:
-                                            url_foto_fato_final = f"{foto_atual_fato}, {str_novas_f}"
-                                        else:
-                                            url_foto_fato_final = str_novas_f
+                                        url_foto_fato_final = f"{foto_atual_fato}, {str_novas_f}" if foto_atual_fato else str_novas_f
+                                        hash_foto_fato_final = f"{hash_atual_fato}, {str_hashes_novos_f}" if hash_atual_fato else str_hashes_novos_f
 
                                 supabase.table("fato_eventos").update({
                                     "tipo_evento": up_tipo, 
@@ -458,7 +496,8 @@ with aba_gestao:
                                     "latitude": lat_f_nova,
                                     "longitude": lon_f_nova,
                                     "resumo_obs": up_resumo,
-                                    "caminho_foto": url_foto_fato_final
+                                    "caminho_foto": url_foto_fato_final,
+                                    "foto_hash": hash_foto_fato_final
                                 }).eq("id_evento", id_f).execute()
                                 st.success("✅ Dados e mídias do evento atualizados!")
                                 st.rerun()
