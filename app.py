@@ -8,6 +8,7 @@ import io
 import numpy as np
 import requests
 import face_recognition
+import cv2
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA
@@ -91,6 +92,39 @@ def checar_mandado_ativo(id_pessoa):
                 return fato.data[0].get('resumo_obs') or "ATIVO"
     except: pass
     return False
+
+def calcular_matches_orb_local(bytes_img1, bytes_img2, max_features=1000, limiar_distancia=45):
+    try:
+        nparr1 = np.frombuffer(bytes_img1, np.uint8)
+        nparr2 = np.frombuffer(bytes_img2, np.uint8)
+        img1 = cv2.imdecode(nparr1, cv2.IMREAD_GRAYSCALE)
+        img2 = cv2.imdecode(nparr2, cv2.IMREAD_GRAYSCALE)
+
+        if img1 is None or img2 is None: return 0
+
+        h1, w1 = img1.shape[:2]
+        if max(h1, w1) > 600:
+            escala = 600.0 / max(h1, w1)
+            img1 = cv2.resize(img1, (int(w1 * escala), int(h1 * escala)))
+
+        h2, w2 = img2.shape[:2]
+        if max(h2, w2) > 600:
+            escala = 600.0 / max(h2, w2)
+            img2 = cv2.resize(img2, (int(w2 * escala), int(h2 * escala)))
+
+        orb = cv2.ORB_create(nfeatures=max_features)
+        kp1, des1 = orb.detectAndCompute(img1, None)
+        kp2, des2 = orb.detectAndCompute(img2, None)
+
+        if des1 is None or des2 is None or len(des1) == 0 or len(des2) == 0:
+            return 0
+
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(des1, des2)
+        pontos_bons = [m for m in matches if m.distance <= limiar_distancia]
+        return len(pontos_bons)
+    except:
+        return 0
 
 # ==========================================
 # RECOLHA DE DADOS EM BANCO
@@ -432,46 +466,10 @@ with aba_gestao:
 
                     if st.button("🗑️ EXCLUIR VEÍCULO DEFINITIVAMENTE", type="primary"):
                         supabase.table("ponte_pessoas_veiculos").delete().eq("id_veiculo", id_v).execute()
-                        supabase.table("ponte_fatos_veiculos").delete().eq("id_veiculo", id_v).execute()
+                        supabase.table("ponte_fatos_veiculos").delete().eq("id_evento", id_v).execute()
                         supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
                         st.success("💀 Veículo erradicado.")
                         st.rerun()
-
-# ==========================================
-# 👁️ FUNÇÃO AUXILIAR ORB PARA LOCAIS/FATOS
-# ==========================================
-def calcular_matches_orb_local(bytes_img1, bytes_img2, max_features=1000, limiar_distancia=45):
-    try:
-        nparr1 = np.frombuffer(bytes_img1, np.uint8)
-        nparr2 = np.frombuffer(bytes_img2, np.uint8)
-        img1 = cv2.imdecode(nparr1, cv2.IMREAD_GRAYSCALE)
-        img2 = cv2.imdecode(nparr2, cv2.IMREAD_GRAYSCALE)
-
-        if img1 is None or img2 is None: return 0
-
-        h1, w1 = img1.shape[:2]
-        if max(h1, w1) > 600:
-            escala = 600.0 / max(h1, w1)
-            img1 = cv2.resize(img1, (int(w1 * escala), int(h1 * escala)))
-
-        h2, w2 = img2.shape[:2]
-        if max(h2, w2) > 600:
-            escala = 600.0 / max(h2, w2)
-            img2 = cv2.resize(img2, (int(w2 * escala), int(h2 * escala)))
-
-        orb = cv2.ORB_create(nfeatures=max_features)
-        kp1, des1 = orb.detectAndCompute(img1, None)
-        kp2, des2 = orb.detectAndCompute(img2, None)
-
-        if des1 is None or des2 is None or len(des1) == 0 or len(des2) == 0:
-            return 0
-
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        matches = bf.match(des1, des2)
-        pontos_bons = [m for m in matches if m.distance <= limiar_distancia]
-        return len(pontos_bons)
-    except:
-        return 0
 
 # ----------------- ABA 5: RECONHECIMENTO FACIAL E BUSCA DE FATOS/LOCAIS -----------------
 with aba_busca_visual:
@@ -591,7 +589,6 @@ with aba_busca_visual:
                             if alvo_pessoa_match.get('observacoes'):
                                 st.markdown(f"**Passagens / Obs:** _{alvo_pessoa_match.get('observacoes')}_")
 
-                        # VEÍCULOS VINCULADOS AO INDIVÍDUO
                         st.markdown("#### 🚗 Veículos Vinculados ao Indivíduo")
                         try:
                             l_veics = supabase.table("ponte_pessoas_veiculos").select("id_veiculo").eq("id_pessoa", alvo_pessoa_match['id_pessoa']).execute()
@@ -604,7 +601,6 @@ with aba_busca_visual:
                                 st.caption("Nenhum veículo vinculado a este indivíduo.")
                         except: pass
 
-                        # VÍNCULOS TOTAIS DA ABA FATOS / LOCAIS
                         st.markdown("#### 🏠 Relação Completa de Fatos & Locais Vinculados")
                         try:
                             l_fatos = supabase.table("ponte_vinculos").select("id_evento").eq("id_pessoa", alvo_pessoa_match['id_pessoa']).execute()
@@ -614,8 +610,6 @@ with aba_busca_visual:
                                     fd = supabase.table("fato_eventos").select("*").eq("id_evento", id_e).execute().data[0]
                                     dt = fd.get('data_hora')[:10] if fd.get('data_hora') else 'Data N/D'
                                     tipo_ev = fd.get('tipo_evento', '')
-                                    
-                                    # Ícone tático por gravidade
                                     icone = "🚨" if tipo_ev == "MP ATIVO" else ("💣" if tipo_ev == "Casa bomba" else ("🔫" if tipo_ev == "Indivíduo Armado" else "📍"))
                                     
                                     with st.expander(f"{icone} {tipo_ev} ({dt}) - Bairro: {fd.get('bairro_setor')}", expanded=True):
@@ -638,7 +632,6 @@ with aba_busca_visual:
                                             if lat_ev and lon_ev:
                                                 st.markdown(f"🗺️ [Abrir Coordenadas do Fato no Maps](https://maps.google.com/?q={lat_ev},{lon_ev})")
                                             
-                                            # Comparsas e Veículos vinculados a este mesmo fato
                                             l_outros = supabase.table("ponte_vinculos").select("id_pessoa").eq("id_evento", id_e).execute()
                                             ids_outros = [o['id_pessoa'] for o in (l_outros.data or []) if o['id_pessoa'] != alvo_pessoa_match['id_pessoa']]
                                             if ids_outros:
@@ -678,7 +671,6 @@ with aba_busca_visual:
                             if lat_fl and lon_fl:
                                 st.markdown(f"🗺️ [Abrir Ponto Exato no Google Maps](https://maps.google.com/?q={lat_fl},{lon_fl})")
 
-                        # INDIVÍDUOS FREQUENTADORES / VINCULADOS A ESTE LOCAL
                         st.markdown("#### 👥 Indivíduos Vinculados a este Local")
                         try:
                             l_p_fato = supabase.table("ponte_vinculos").select("id_pessoa").eq("id_evento", fato_local_match['id_evento']).execute()
@@ -693,8 +685,7 @@ with aba_busca_visual:
                                 st.caption("Nenhum indivíduo vinculado diretamente a este fato.")
                         except: pass
 
-                        # VEÍCULOS VINCULADOS AO LOCAL
-                        st.markdown("#### 🚗 Veículos Vinculados a este Local")
+                        st.markdown("#### 🚗 Veículos Vinculados ao Local")
                         try:
                             l_v_fato = supabase.table("ponte_fatos_veiculos").select("id_veiculo").eq("id_evento", fato_local_match['id_evento']).execute()
                             ids_vf = [lv['id_veiculo'] for lv in (l_v_fato.data or [])]
