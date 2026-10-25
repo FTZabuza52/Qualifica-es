@@ -5,9 +5,8 @@ from datetime import datetime, date
 import imagehash
 from PIL import Image
 import io
-import numpy as np
 import requests
-import cv2
+import pandas as pd
 
 # ==========================================
 # CONFIGURAÇÕES DA PÁGINA
@@ -92,39 +91,6 @@ def checar_mandado_ativo(id_pessoa):
     except: pass
     return False
 
-def calcular_matches_orb(bytes_img1, bytes_img2, max_features=1000, limiar_distancia=45):
-    try:
-        nparr1 = np.frombuffer(bytes_img1, np.uint8)
-        nparr2 = np.frombuffer(bytes_img2, np.uint8)
-        img1 = cv2.imdecode(nparr1, cv2.IMREAD_GRAYSCALE)
-        img2 = cv2.imdecode(nparr2, cv2.IMREAD_GRAYSCALE)
-
-        if img1 is None or img2 is None: return 0
-
-        h1, w1 = img1.shape[:2]
-        if max(h1, w1) > 600:
-            escala = 600.0 / max(h1, w1)
-            img1 = cv2.resize(img1, (int(w1 * escala), int(h1 * escala)))
-
-        h2, w2 = img2.shape[:2]
-        if max(h2, w2) > 600:
-            escala = 600.0 / max(h2, w2)
-            img2 = cv2.resize(img2, (int(w2 * escala), int(h2 * escala)))
-
-        orb = cv2.ORB_create(nfeatures=max_features)
-        kp1, des1 = orb.detectAndCompute(img1, None)
-        kp2, des2 = orb.detectAndCompute(img2, None)
-
-        if des1 is None or des2 is None or len(des1) == 0 or len(des2) == 0:
-            return 0
-
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        matches = bf.match(des1, des2)
-        pontos_bons = [m for m in matches if m.distance <= limiar_distancia]
-        return len(pontos_bons)
-    except:
-        return 0
-
 # ==========================================
 # RECOLHA DE DADOS EM BANCO
 # ==========================================
@@ -187,8 +153,8 @@ with col2:
 st.markdown("<h2 style='text-align: center;'>Sistema de Inteligência FT-20</h2>", unsafe_allow_html=True)
 st.divider()
 
-aba_alvo, aba_local, aba_veiculo, aba_gestao, aba_busca_visual = st.tabs([
-    "👤 Indivíduo", "🏠 Fato/Local", "🚗 Veículo", "⚙️ Gestão", "📸 Busca Visual (ORB)"
+aba_alvo, aba_local, aba_veiculo, aba_gestao, aba_mapa = st.tabs([
+    "👤 Indivíduo", "🏠 Fato/Local", "🚗 Veículo", "⚙️ Gestão", "🗺️ Mapa & Localização"
 ])
 
 # ----------------- ABA 1: PESSOAS -----------------
@@ -254,7 +220,7 @@ with aba_alvo:
                     id_novo = res.data[0].get('id_pessoa')
                     for f in v_fatos: supabase.table("ponte_vinculos").insert({"id_pessoa": id_novo, "id_evento": dic_fatos[f]}).execute()
                     for v in v_veiculos: supabase.table("ponte_pessoas_veiculos").insert({"id_pessoa": id_novo, "id_veiculo": dic_veiculos[v]}).execute()
-                st.success(f"✅ Indivíduo gravado com sucesso!")
+                st.success("✅ Indivíduo gravado com sucesso!")
             except Exception as e: st.error(f"❌ Erro: {e}")
 
 # ----------------- ABA 2: FATOS / EVENTOS -----------------
@@ -470,225 +436,103 @@ with aba_gestao:
                         st.success("💀 Veículo erradicado.")
                         st.rerun()
 
-# ----------------- ABA 5: BUSCA VISUAL COMPLETA VIA ORB -----------------
-with aba_busca_visual:
-    st.markdown("### 📸 Inteligência Visual (Indivíduos & Fatos/Locais)")
-    st.caption("O motor geométrico ORB analisa pontos característicos em comum para identificar pessoas, veículos, fachadas e locais.")
+# ----------------- ABA 5: MAPA TÁTICO & LOCALIZAÇÃO -----------------
+with aba_mapa:
+    st.markdown("### 🗺️ Mapeamento Tático & Georreferenciamento")
+    st.caption("Visualização geográfica de alvos, pontos de interesse e registros com coordenadas válidas.")
 
-    tipo_captura = st.radio("Origem da Imagem:", ["📁 Carregar Arquivo (Galeria/WhatsApp)", "📷 Tirar Foto Agora (Câmera)"], horizontal=True)
-    
-    arquivo_analise = None
-    if tipo_captura == "📁 Carregar Arquivo (Galeria/WhatsApp)":
-        arquivo_analise = st.file_uploader("Selecione a imagem para cruzamento:", type=["jpg", "jpeg", "png"], key="upload_visual_orb")
-    else:
-        arquivo_analise = st.camera_input("Enquadre o indivíduo ou o local de interesse:")
+    pontos_mapa = []
 
-    if arquivo_analise is not None:
-        col_img1, col_img2 = st.columns([1, 2])
-        with col_img1:
-            st.image(arquivo_analise, caption="Foto para Varredura", width="stretch")
-            
-        with col_img2:
-            st.info("ℹ️ A varredura analisará pontos estruturais contra toda a base de Pessoas e Fatos da FT-20.")
-            botao_varrer = st.button("🚀 Iniciar Varredura de Inteligência", type="primary", width="stretch")
+    # 1. Coleta coordenadas dos Fatos / Eventos
+    for f in lista_fatos_bruta:
+        lat = f.get('latitude')
+        lon = f.get('longitude')
+        if lat and lon:
+            try:
+                lat_float = float(lat)
+                lon_float = float(lon)
+                tipo = f.get('tipo_evento', 'Fato')
+                bairro = f.get('bairro_setor', 'Setor')
+                pontos_mapa.append({
+                    "latitude": lat_float,
+                    "longitude": lon_float,
+                    "categoria": "Fato/Evento",
+                    "descricao": f"{tipo} - {bairro}"
+                })
+            except ValueError:
+                pass
 
-        if botao_varrer:
-            with st.spinner("🔍 Analisando pontos característicos na base de dados..."):
-                try:
-                    bytes_entrada = arquivo_analise.getvalue()
+    # 2. Coleta coordenadas das Moradias dos Alvos
+    for p in lista_alvos_bruta:
+        lat = p.get('latitude')
+        lon = p.get('longitude')
+        if lat and lon:
+            try:
+                lat_float = float(lat)
+                lon_float = float(lon)
+                nome = p.get('nome', 'Alvo')
+                vulgo = p.get('vulgo') or 'S/V'
+                mp = checar_mandado_ativo(p.get('id_pessoa'))
+                categoria = "🚨 MANDADO ATIVO" if mp else "👤 Alvo (Moradia)"
+                pontos_mapa.append({
+                    "latitude": lat_float,
+                    "longitude": lon_float,
+                    "categoria": categoria,
+                    "descricao": f"{nome} ({vulgo})"
+                })
+            except ValueError:
+                pass
 
-                   # 1. PROCESSAMENTO DE INDIVÍDUOS (ORB)
-                    alvo_pessoa_match = None
-                    max_matches_pessoa = 0
-                    url_match_foto_p = ""
+    col_map_resumo, col_map_filtros = st.columns([3, 1])
 
-                    alvos_com_foto = [p for p in lista_alvos_bruta if p.get('caminho_foto')]
-                    if alvos_com_foto:
-                        prog_p = st.progress(0, text="Varrendo base de indivíduos...")
-                        total_p = len(alvos_com_foto)
-                        for idx, p in enumerate(alvos_com_foto):
-                            urls_p = [u.strip() for u in p['caminho_foto'].split(',') if u.strip()]
-                            for u_p in urls_p:
-                                try:
-                                    resp_p = requests.get(u_p, timeout=4)
-                                    if resp_p.status_code == 200:
-                                        qtd = calcular_matches_orb(bytes_entrada, resp_p.content)
-                                        # Só substitui se esta foto for estritamente superior à melhor já encontrada
-                                        if qtd > max_matches_pessoa:
-                                            max_matches_pessoa = qtd
-                                            alvo_pessoa_match = p.copy()  # Isola os dados exatos do alvo titular
-                                            url_match_foto_p = u_p
-                                except: pass
-                            prog_p.progress((idx + 1) / total_p)
-                        prog_p.empty()
+    with col_map_filtros:
+        st.markdown("#### Filtros do Mapa")
+        categorias_disponiveis = list(set(pt["categoria"] for pt in pontos_mapa)) if pontos_mapa else []
+        filtro_sel = st.multiselect("Filtrar por Categoria:", categorias_disponiveis, default=categorias_disponiveis)
 
-                    # 2. PROCESSAMENTO DE FATOS / LOCAIS (ORB)
-                    fato_local_match = None
-                    max_matches_local = 0
-                    url_match_foto_f = ""
+    with col_map_resumo:
+        if pontos_mapa:
+            pontos_filtrados = [pt for pt in pontos_mapa if pt["categoria"] in filtro_sel]
+            if pontos_filtrados:
+                df_mapa = pd.DataFrame(pontos_filtrados)
+                st.map(df_mapa[["latitude", "longitude"]], zoom=12)
+                st.caption(f"Exibindo **{len(pontos_filtrados)}** pontos georreferenciados no mapa.")
+            else:
+                st.info("Nenhum ponto corresponde aos filtros selecionados.")
+        else:
+            st.info("Nenhuma coordenada válida cadastrada em Fatos ou Alvos até o momento.")
 
-                    fatos_com_foto = [f for f in lista_fatos_bruta if f.get('caminho_foto')]
-                    if fatos_com_foto:
-                        prog_f = st.progress(0, text="Varrendo base de Fatos/Locais...")
-                        total_f = len(fatos_com_foto)
-                        for idx, f in enumerate(fatos_com_foto):
-                            urls_f = [u.strip() for u in f['caminho_foto'].split(',') if u.strip()]
-                            for u_f in urls_f:
-                                try:
-                                    resp_f = requests.get(u_f, timeout=4)
-                                    if resp_f.status_code == 200:
-                                        qtd_f = calcular_matches_orb(bytes_entrada, resp_f.content)
-                                        if qtd_f > max_matches_local:
-                                            max_matches_local = qtd_f
-                                            fato_local_match = f
-                                            url_match_foto_f = u_f
-                                except: pass
-                            prog_f.progress((idx + 1) / total_f)
-                        prog_f.empty()
+    st.markdown("---")
+    st.markdown("### 📍 Registro Rápido de Ponto / Coordenadas")
+    with st.form("form_ponto_rapido", clear_on_submit=True):
+        st.caption("Cadastre rapidamente um ponto de interesse, averiguação ou coordenadas obtidas pela guarnição.")
+        c_p1, c_p2 = st.columns(2)
+        with c_p1:
+            tipo_ponto = st.selectbox("Classificação:", ["Abordagem", "Visto/Abordado", "LTD", "Ponto de Salves", "Casa bomba", "Outro"])
+            bairro_ponto = st.text_input("Bairro / Setor / Referência:")
+        with c_p2:
+            coords_ponto = st.text_input("Coordenadas GPS (Lat, Lon):", placeholder="-15.8954, -52.2568")
+            obs_ponto = st.text_area("Observações da Posição / Ocorrência:")
 
-                    # ========================================================
-                    # EXIBIÇÃO: INDIVÍDUO IDENTIFICADO (>= 20 pontos)
-                    # ========================================================
-                    if alvo_pessoa_match and max_matches_pessoa >= 20:
-                        st.success(f"🎯 **INDIVÍDUO IDENTIFICADO VIA ORB! ({max_matches_pessoa} pontos característicos coincidentes)**")
-
-                        mp_obs = checar_mandado_ativo(alvo_pessoa_match['id_pessoa'])
-                        if mp_obs:
-                            st.error(f"🚨 **ALERTA CRÍTICO: MANDADO DE PRISÃO ATIVO!**\n\nDetalhes: _{mp_obs}_")
-
-                        st.markdown("---")
-                        st.markdown("### 📋 Ficha de Qualificação Integral")
-                        c_card_foto, c_card_dados = st.columns([1, 2])
-                        with c_card_foto:
-                            st.image(url_match_foto_p, caption=f"Registro: {alvo_pessoa_match.get('nome')}", width="stretch")
-
-                        with c_card_dados:
-                            st.markdown(f"**Nome:** `{alvo_pessoa_match.get('nome')}`")
-                            st.markdown(f"**Vulgo:** `{alvo_pessoa_match.get('vulgo') or 'N/D'}`")
-                            st.markdown(f"**CPF:** `{alvo_pessoa_match.get('cpf') or 'N/D'}`")
-                            st.markdown(f"**Data de Nascimento:** `{alvo_pessoa_match.get('data_nascimento') or 'N/D'}`")
-                            st.markdown(f"**Nome da Mãe:** `{alvo_pessoa_match.get('nome_mae') or 'N/D'}`")
-                            st.markdown(f"**Endereço:** `{alvo_pessoa_match.get('endereco') or 'N/D'}`")
-                            
-                            lat_m, lon_m = alvo_pessoa_match.get('latitude'), alvo_pessoa_match.get('longitude')
-                            if lat_m and lon_m:
-                                st.markdown(f"📍 [Ver Residência no Google Maps](https://maps.google.com/?q={lat_m},{lon_m})")
-
-                            if alvo_pessoa_match.get('tatuagens_sinais'):
-                                st.markdown(f"**Tatuagens / Sinais:** _{alvo_pessoa_match.get('tatuagens_sinais')}_")
-                            if alvo_pessoa_match.get('observacoes'):
-                                st.markdown(f"**Passagens / Obs:** _{alvo_pessoa_match.get('observacoes')}_")
-
-                        st.markdown("#### 🚗 Veículos Vinculados ao Indivíduo")
-                        try:
-                            l_veics = supabase.table("ponte_pessoas_veiculos").select("id_veiculo").eq("id_pessoa", alvo_pessoa_match['id_pessoa']).execute()
-                            ids_v = [l['id_veiculo'] for l in (l_veics.data or [])]
-                            if ids_v:
-                                for vid in ids_v:
-                                    vd = supabase.table("dim_veiculos").select("*").eq("id_veiculo", vid).execute().data[0]
-                                    st.markdown(f"• **{vd.get('placa')}** | {vd.get('cor')} {vd.get('tipo')} - _{vd.get('caracteristicas') or 'Sem detalhes'}_")
-                            else:
-                                st.caption("Nenhum veículo vinculado a este indivíduo.")
-                        except: pass
-
-                        st.markdown("#### 🏠 Relação Completa de Fatos & Locais Vinculados")
-                        try:
-                            l_fatos = supabase.table("ponte_vinculos").select("id_evento").eq("id_pessoa", alvo_pessoa_match['id_pessoa']).execute()
-                            ids_ev = [l['id_evento'] for l in (l_fatos.data or [])]
-                            if ids_ev:
-                                for id_e in ids_ev:
-                                    fd = supabase.table("fato_eventos").select("*").eq("id_evento", id_e).execute().data[0]
-                                    dt = fd.get('data_hora')[:10] if fd.get('data_hora') else 'Data N/D'
-                                    tipo_ev = fd.get('tipo_evento', '')
-                                    icone = "🚨" if tipo_ev == "MP ATIVO" else ("💣" if tipo_ev == "Casa bomba" else ("🔫" if tipo_ev == "Indivíduo Armado" else "📍"))
-                                    
-                                    with st.expander(f"{icone} {tipo_ev} ({dt}) - Bairro: {fd.get('bairro_setor')}", expanded=True):
-                                        col_f1, col_f2 = st.columns([1, 2])
-                                        with col_f1:
-                                            if fd.get('caminho_foto'):
-                                                foto_fato_url = fd.get('caminho_foto').split(',')[0].strip()
-                                                st.image(foto_fato_url, caption=f"Foto do Local/Fato", width="stretch")
-                                            else:
-                                                st.caption("Sem foto anexada a este fato.")
-                                        
-                                        with col_f2:
-                                            st.markdown(f"**Tipo de Registro:** `{tipo_ev}`")
-                                            st.markdown(f"**Data da Ocorrência:** `{dt}`")
-                                            st.markdown(f"**Bairro / Setor:** `{fd.get('bairro_setor') or 'N/D'}`")
-                                            if fd.get('resumo_obs'):
-                                                st.markdown(f"**Relato da Guarnição:**\n\n_{fd.get('resumo_obs')}_")
-                                            
-                                            lat_ev, lon_ev = fd.get('latitude'), fd.get('longitude')
-                                            if lat_ev and lon_ev:
-                                                st.markdown(f"🗺️ [Abrir Coordenadas do Fato no Maps](https://maps.google.com/?q={lat_ev},{lon_ev})")
-                                            
-                                            l_outros = supabase.table("ponte_vinculos").select("id_pessoa").eq("id_evento", id_e).execute()
-                                            ids_outros = [o['id_pessoa'] for o in (l_outros.data or []) if o['id_pessoa'] != alvo_pessoa_match['id_pessoa']]
-                                            if ids_outros:
-                                                nomes_comp = []
-                                                for opid in ids_outros:
-                                                    op_data = supabase.table("dim_pessoas").select("nome, vulgo").eq("id_pessoa", opid).execute()
-                                                    if op_data.data:
-                                                        nomes_comp.append(f"{op_data.data[0]['nome']} (Vulgo: {op_data.data[0].get('vulgo','N/D')})")
-                                                st.markdown(f"👥 **Comparsas/Outros Alvos Ligados:** {', '.join(nomes_comp)}")
-                            else:
-                                st.caption("Nenhum fato ou local registrado para este alvo.")
-                        except Exception as e:
-                            st.caption(f"Erro ao listar fatos vinculados: {e}")
-
-                    # ========================================================
-                    # EXIBIÇÃO: LOCAL/FATO IDENTIFICADO (>= 20 pontos)
-                    # ========================================================
-                    elif fato_local_match and max_matches_local >= 20:
-                        st.success(f"🏠 **LOCAL/FATO RECONHECIDO (ORB)! ({max_matches_local} pontos geométricos coincidentes)**")
-                        
-                        st.markdown("---")
-                        st.markdown("### 📍 Detalhes do Fato / Ponto de Interesse")
-                        c_loc_foto, c_loc_dados = st.columns([1, 2])
-                        with c_loc_foto:
-                            st.image(url_match_foto_f, caption=f"Registro do Local", width="stretch")
-                            
-                        with c_loc_dados:
-                            tipo_f = fato_local_match.get('tipo_evento', '')
-                            dt_f = fato_local_match.get('data_hora')[:10] if fato_local_match.get('data_hora') else 'Data N/D'
-                            st.markdown(f"**Tipo de Evento:** `{tipo_f}`")
-                            st.markdown(f"**Data:** `{dt_f}` | **Setor:** `{fato_local_match.get('bairro_setor')}`")
-                            
-                            if fato_local_match.get('resumo_obs'):
-                                st.markdown(f"**Histórico/Observações:**\n\n_{fato_local_match.get('resumo_obs')}_")
-                                
-                            lat_fl, lon_fl = fato_local_match.get('latitude'), fato_local_match.get('longitude')
-                            if lat_fl and lon_fl:
-                                st.markdown(f"🗺️ [Abrir Ponto Exato no Google Maps](https://maps.google.com/?q={lat_fl},{lon_fl})")
-
-                        st.markdown("#### 👥 Indivíduos Vinculados a este Local")
-                        try:
-                            l_p_fato = supabase.table("ponte_vinculos").select("id_pessoa").eq("id_evento", fato_local_match['id_evento']).execute()
-                            ids_pf = [lp['id_pessoa'] for lp in (l_p_fato.data or [])]
-                            if ids_pf:
-                                for pid in ids_pf:
-                                    pd = supabase.table("dim_pessoas").select("*").eq("id_pessoa", pid).execute().data[0]
-                                    mp = checar_mandado_ativo(pid)
-                                    alerta_mp = "🚨 **MP ATIVO** " if mp else ""
-                                    st.markdown(f"• {alerta_mp}**{pd.get('nome')}** (Vulgo: _{pd.get('vulgo') or 'N/D'}_) | CPF: `{pd.get('cpf') or 'N/D'}`")
-                            else:
-                                st.caption("Nenhum indivíduo vinculado diretamente a este fato.")
-                        except: pass
-
-                        st.markdown("#### 🚗 Veículos Vinculados ao Local")
-                        try:
-                            l_v_fato = supabase.table("ponte_fatos_veiculos").select("id_veiculo").eq("id_evento", fato_local_match['id_evento']).execute()
-                            ids_vf = [lv['id_veiculo'] for lv in (l_v_fato.data or [])]
-                            if ids_vf:
-                                for vid in ids_vf:
-                                    vd = supabase.table("dim_veiculos").select("*").eq("id_veiculo", vid).execute().data[0]
-                                    st.markdown(f"• **{vd.get('placa')}** | {vd.get('cor')} {vd.get('tipo')} - _{vd.get('caracteristicas') or 'Sem obs'}_")
-                            else:
-                                st.caption("Nenhum veículo vinculado a este fato.")
-                        except: pass
-
-                    else:
-                        st.warning(f"❌ Nenhuma compatibilidade visual confirmada (Máx pontos Pessoa: {max_matches_pessoa} | Máx pontos Local: {max_matches_local} - corte mínimo: 20).")
-
-                except Exception as e:
-                    st.error(f"Erro durante a varredura visual: {e}")
+        if st.form_submit_button("📍 Salvar Ponto no Banco"):
+            if coords_ponto and bairro_ponto:
+                lat_p, lon_p = extrair_coordenadas(coords_ponto)
+                if lat_p and lon_p:
+                    dados_ponto = {
+                        "tipo_evento": tipo_ponto,
+                        "data_hora": datetime.now().isoformat(),
+                        "bairro_setor": bairro_ponto,
+                        "latitude": lat_p,
+                        "longitude": lon_p,
+                        "resumo_obs": obs_ponto
+                    }
+                    try:
+                        supabase.table("fato_eventos").insert(dados_ponto).execute()
+                        st.success("✅ Ponto registrado e plotado no banco com sucesso!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar coordenadas: {e}")
+                else:
+                    st.warning("Formato de coordenadas inválido. Use: -15.1234, -52.1234")
+            else:
+                st.warning("Preencha as coordenadas e a referência/bairro.")
