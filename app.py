@@ -439,7 +439,7 @@ with aba_gestao:
 # ----------------- ABA 5: MAPA TÁTICO & LOCALIZAÇÃO -----------------
 with aba_mapa:
     st.markdown("### 🗺️ Mapeamento Tático & Georreferenciamento")
-    st.caption("Visualização geográfica de alvos, pontos de interesse e registros com coordenadas válidas.")
+    st.caption("Visualização geográfica de alvos, ocorrências e alertas de campo em tempo real.")
 
     pontos_mapa = []
 
@@ -449,15 +449,11 @@ with aba_mapa:
         lon = f.get('longitude')
         if lat and lon:
             try:
-                lat_float = float(lat)
-                lon_float = float(lon)
-                tipo = f.get('tipo_evento', 'Fato')
-                bairro = f.get('bairro_setor', 'Setor')
                 pontos_mapa.append({
-                    "latitude": lat_float,
-                    "longitude": lon_float,
+                    "latitude": float(lat),
+                    "longitude": float(lon),
                     "categoria": "Fato/Evento",
-                    "descricao": f"{tipo} - {bairro}"
+                    "descricao": f"{f.get('tipo_evento', 'Fato')} - {f.get('bairro_setor', 'Setor')}"
                 })
             except ValueError:
                 pass
@@ -468,21 +464,35 @@ with aba_mapa:
         lon = p.get('longitude')
         if lat and lon:
             try:
-                lat_float = float(lat)
-                lon_float = float(lon)
-                nome = p.get('nome', 'Alvo')
-                vulgo = p.get('vulgo') or 'S/V'
                 mp = checar_mandado_ativo(p.get('id_pessoa'))
                 categoria = "🚨 MANDADO ATIVO" if mp else "👤 Alvo (Moradia)"
                 pontos_mapa.append({
-                    "latitude": lat_float,
-                    "longitude": lon_float,
+                    "latitude": float(lat),
+                    "longitude": float(lon),
                     "categoria": categoria,
-                    "descricao": f"{nome} ({vulgo})"
+                    "descricao": f"{p.get('nome', 'Alvo')} ({p.get('vulgo') or 'S/V'})"
                 })
             except ValueError:
                 pass
 
+    # 3. Coleta os Alertas / Transmissões de Campo (NOVO)
+    try:
+        resp_alerta = supabase.table("alerta_colaborador").select("*").order("created_at", desc=True).limit(50).execute()
+        lista_alertas = resp_alerta.data or []
+        for a in lista_alertas:
+            lat_a = a.get('latitude')
+            lon_a = a.get('longitude')
+            if lat_a and lon_a:
+                pontos_mapa.append({
+                    "latitude": float(lat_a),
+                    "longitude": float(lon_a),
+                    "categoria": "📍 Alerta / Posição de Campo",
+                    "descricao": f"[{a.get('token_canal')}] Precisão: {a.get('precisao_metros')}m"
+                })
+    except Exception as e:
+        lista_alertas = []
+
+    # Renderização do Mapa e Filtros
     col_map_resumo, col_map_filtros = st.columns([3, 1])
 
     with col_map_filtros:
@@ -500,39 +510,23 @@ with aba_mapa:
             else:
                 st.info("Nenhum ponto corresponde aos filtros selecionados.")
         else:
-            st.info("Nenhuma coordenada válida cadastrada em Fatos ou Alvos até o momento.")
+            st.info("Nenhuma coordenada válida cadastrada até ao momento.")
 
+    # Painel de Auditoria e Traçado de Rota Rápida
     st.markdown("---")
-    st.markdown("### 📍 Registro Rápido de Ponto / Coordenadas")
-    with st.form("form_ponto_rapido", clear_on_submit=True):
-        st.caption("Cadastre rapidamente um ponto de interesse, averiguação ou coordenadas obtidas pela guarnição.")
-        c_p1, c_p2 = st.columns(2)
-        with c_p1:
-            tipo_ponto = st.selectbox("Classificação:", ["Abordagem", "Visto/Abordado", "LTD", "Ponto de Salves", "Casa bomba", "Outro"])
-            bairro_ponto = st.text_input("Bairro / Setor / Referência:")
-        with c_p2:
-            coords_ponto = st.text_input("Coordenadas GPS (Lat, Lon):", placeholder="-15.8954, -52.2568")
-            obs_ponto = st.text_area("Observações da Posição / Ocorrência:")
+    st.markdown("#### 🚨 Últimas Posições Recebidas de Campo")
+    if lista_alertas:
+        for item in lista_alertas[:5]:
+            dt = item.get('created_at', '')[:19].replace('T', ' ')
+            lat = item.get('latitude')
+            lon = item.get('longitude')
+            prec = item.get('precisao_metros')
+            canal = item.get('token_canal')
 
-        if st.form_submit_button("📍 Salvar Ponto no Banco"):
-            if coords_ponto and bairro_ponto:
-                lat_p, lon_p = extrair_coordenadas(coords_ponto)
-                if lat_p and lon_p:
-                    dados_ponto = {
-                        "tipo_evento": tipo_ponto,
-                        "data_hora": datetime.now().isoformat(),
-                        "bairro_setor": bairro_ponto,
-                        "latitude": lat_p,
-                        "longitude": lon_p,
-                        "resumo_obs": obs_ponto
-                    }
-                    try:
-                        supabase.table("fato_eventos").insert(dados_ponto).execute()
-                        st.success("✅ Ponto registrado e plotado no banco com sucesso!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar coordenadas: {e}")
-                else:
-                    st.warning("Formato de coordenadas inválido. Use: -15.1234, -52.1234")
-            else:
-                st.warning("Preencha as coordenadas e a referência/bairro.")
+            c_info, c_btn = st.columns([3, 1])
+            with c_info:
+                st.markdown(f"• **Canal / Missão:** `{canal}` | **Hora:** `{dt}` | **Precisão:** `{prec} metros`")
+            with c_btn:
+                st.markdown(f"[🗺️ Traçar Rota no Maps](https://maps.google.com/?q={lat},{lon})")
+    else:
+        st.caption("Nenhum alerta recebido recentemente.")
