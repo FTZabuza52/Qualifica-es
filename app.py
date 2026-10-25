@@ -530,3 +530,34 @@ with aba_mapa:
                 st.markdown(f"[🗺️ Traçar Rota no Maps](https://maps.google.com/?q={lat},{lon})")
     else:
         st.caption("Nenhum alerta recebido recentemente.")
+        # Painel de Alertas com botão de exclusão direto (❌)
+    st.markdown("---")
+    st.markdown("#### 🚨 Últimas Posições Recebidas de Campo")
+
+    if lista_alertas:
+        for item in lista_alertas[:10]:
+            id_reg = item.get('id')
+            dt = item.get('created_at', '')[:19].replace('T', ' ')
+            lat = item.get('latitude')
+            lon = item.get('longitude')
+            prec = item.get('precisao_metros')
+            canal = item.get('token_canal')
+
+            # Três colunas: Informações | Link do Mapa | Botão X
+            col_info, col_link, col_del = st.columns([4, 1.2, 0.5])
+            
+            with col_info:
+                st.markdown(f"• **Canal:** `{canal}` | **Hora:** `{dt}` | **Precisão:** `{prec}m`")
+            
+            with col_link:
+                st.markdown(f"[🗺️ Ver no Maps](https://maps.google.com/?q={lat},{lon})")
+            
+            with col_del:
+                if st.button("❌", key=f"del_alerta_{id_reg}", help=f"Excluir coordenadas do canal {canal}"):
+                    try:
+                        supabase.table("alerta_colaborador").delete().eq("id", id_reg).execute()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
+    else:
+        st.caption("Nenhum alerta recebido recentemente.")
