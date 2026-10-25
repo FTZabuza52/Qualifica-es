@@ -2,6 +2,5 @@ streamlit
 supabase
 imagehash
 Pillow
-opencv-python-headless
-numpy
 requests
+pandas
