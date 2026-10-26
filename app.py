@@ -144,6 +144,138 @@ except Exception as e:
     lista_veiculos_bruta = []
 
 # ==========================================
+# FUNÇÃO: GESTÃO DE VÍNCULOS DINÂMICOS
+# ==========================================
+def gerenciar_vinculos_dinamicos(tipo_origem, id_origem, nome_origem):
+    st.markdown("---")
+    st.markdown("#### 🔗 Rede de Vínculos Táticos")
+    st.caption(f"Vínculos diretos registrados para: **{nome_origem}**")
+
+    # 1. Buscar vínculos existentes
+    try:
+        resp_v = supabase.table("vinculos_taticos").select("*").eq("tipo_origem", tipo_origem).eq("id_origem", str(id_origem)).execute()
+        vinculos = resp_v.data or []
+    except Exception:
+        vinculos = []
+
+    if vinculos:
+        st.markdown("**Vínculos Ativos:**")
+        for v in vinculos:
+            col_v1, col_v2, col_v3 = st.columns([4, 2, 0.6])
+            with col_v1:
+                st.markdown(f"• **[{v['tipo_destino']}]** {v['nome_destino']} — *({v['relacao']})*")
+                if v.get('observacao'):
+                    st.caption(f"Obs: {v['observacao']}")
+            with col_v2:
+                dt_v = v.get('created_at', '')[:10]
+                st.caption(f"Cadastrado: {dt_v}")
+            with col_v3:
+                if st.button("❌", key=f"btn_del_vinc_{v['id']}", help="Remover vínculo"):
+                    try:
+                        supabase.table("vinculos_taticos").delete().eq("id", v['id']).execute()
+                        st.toast("Vínculo removido com sucesso!")
+                        st.rerun()
+                    except Exception as err:
+                        st.error(f"Erro ao remover vínculo: {err}")
+    else:
+        st.info("Nenhum vínculo registrado até o momento.")
+
+    # 2. Adicionar Novo Vínculo
+    with st.expander("➕ Conectar a Pessoa, Fato, Veículo ou Ponto Local"):
+        tipo_conectar = st.radio(
+            "Tipo de Conexão:",
+            ["👤 Pessoa / Alvo", "🏠 Fato / Evento", "🚗 Veículo", "📍 Ponto / Local Fixo"],
+            horizontal=True,
+            key=f"rad_tipo_{tipo_origem}_{id_origem}"
+        )
+
+        id_dest = None
+        nome_dest = ""
+        tipo_dest_db = ""
+
+        col_c1, col_c2 = st.columns([3, 2])
+
+        with col_c1:
+            if tipo_conectar == "👤 Pessoa / Alvo":
+                tipo_dest_db = "PESSOA"
+                opcoes = {
+                    f"{p.get('nome')} ({p.get('vulgo') or 'S/V'})": str(p.get('id_pessoa'))
+                    for p in lista_alvos_bruta if not (tipo_origem == "PESSOA" and str(p.get('id_pessoa')) == str(id_origem))
+                }
+                if opcoes:
+                    sel = st.selectbox("Selecione o Indivíduo:", list(opcoes.keys()), key=f"sel_p_{id_origem}")
+                    id_dest = opcoes[sel]
+                    nome_dest = sel
+                else:
+                    st.caption("Nenhum outro indivíduo cadastrado.")
+
+            elif tipo_conectar == "🏠 Fato / Evento":
+                tipo_dest_db = "FATO"
+                opcoes = {
+                    f"[{f.get('data_hora', '')[:10]}] {f.get('tipo_evento')} - {f.get('bairro_setor')}": str(f.get('id_evento'))
+                    for f in lista_fatos_bruta if not (tipo_origem == "FATO" and str(f.get('id_evento')) == str(id_origem))
+                }
+                if opcoes:
+                    sel = st.selectbox("Selecione a Ocorrência:", list(opcoes.keys()), key=f"sel_f_{id_origem}")
+                    id_dest = opcoes[sel]
+                    nome_dest = sel
+                else:
+                    st.caption("Nenhuma ocorrência disponível.")
+
+            elif tipo_conectar == "🚗 Veículo":
+                tipo_dest_db = "VEICULO"
+                opcoes = {
+                    f"{v.get('placa', 'S/Placa')} - {v.get('tipo', '')} ({v.get('cor', '')})": str(v.get('id_veiculo'))
+                    for v in lista_veiculos_bruta if not (tipo_origem == "VEICULO" and str(v.get('id_veiculo')) == str(id_origem))
+                }
+                if opcoes:
+                    sel = st.selectbox("Selecione o Veículo:", list(opcoes.keys()), key=f"sel_v_{id_origem}")
+                    id_dest = opcoes[sel]
+                    nome_dest = sel
+                else:
+                    st.caption("Nenhum veículo disponível.")
+
+            elif tipo_conectar == "📍 Ponto / Local Fixo":
+                tipo_dest_db = "LOCAL"
+                nome_dest = st.text_input("Identificação / Endereço / Ponto:", placeholder="Ex: Casa Bomba - Bairro União", key=f"txt_l_{id_origem}")
+                id_dest = "LOCAL_MANUAL"
+
+        with col_c2:
+            relacoes_padrao = [
+                "Comparsa / Aliança",
+                "Ponto de Apoio / Esconderijo",
+                "Autor / Envolvido",
+                "Vítima",
+                "Testemunha / Informante",
+                "Ponto de Venda / Tráfico",
+                "Proprietário / Condutor",
+                "Local de Frequência",
+                "Outro"
+            ]
+            rel_escolhida = st.selectbox("Grau / Tipo de Relação:", relacoes_padrao, key=f"sel_rel_{id_origem}")
+            obs_rel = st.text_input("Observação Breve:", placeholder="Ex: Avistado em apoio durante patrulhamento", key=f"txt_obs_{id_origem}")
+
+        if st.button("🔗 Confirmar e Gravar Vínculo", type="primary", key=f"btn_salvar_vinc_{id_origem}"):
+            if id_dest and nome_dest:
+                novo_vinc = {
+                    "tipo_origem": tipo_origem,
+                    "id_origem": str(id_origem),
+                    "tipo_destino": tipo_dest_db,
+                    "id_destino": str(id_dest),
+                    "nome_destino": nome_dest,
+                    "relacao": rel_escolhida,
+                    "observacao": obs_rel
+                }
+                try:
+                    supabase.table("vinculos_taticos").insert(novo_vinc).execute()
+                    st.success("✅ Vínculo tático gravado com sucesso!")
+                    st.rerun()
+                except Exception as e_vinc:
+                    st.error(f"Erro ao salvar vínculo: {e_vinc}")
+            else:
+                st.warning("Preencha todas as informações necessárias.")
+
+# ==========================================
 # CABEÇALHO E NAVEGAÇÃO
 # ==========================================
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -358,8 +490,8 @@ with aba_gestao:
                                         hash_foto_final = f"{hash_atual}, {str_hashes_novos}" if hash_atual else str_hashes_novos
 
                                 supabase.table("dim_pessoas").update({
-                                    "nome": up_nome, "vulgo": up_vulgo, "nome_mae": up_mae, "data_nascimento": up_nasc,
-                                    "cpf": up_cpf, "endereco": up_endereco, "latitude": lat_nova, "longitude": lon_nova,
+                                    "nome": up_nome, "vulgo": up_vulgo, "nome_mae": up_mae, "data_nascimento": up_nasc, 
+                                    "cpf": up_cpf, "endereco": up_endereco, "latitude": lat_nova, "longitude": lon_nova, 
                                     "tatuagens_sinais": up_tattoo, "observacoes": up_obs, "caminho_foto": url_foto_final,
                                     "foto_hash": hash_foto_final
                                 }).eq("id_pessoa", id_p).execute()
@@ -374,6 +506,9 @@ with aba_gestao:
                         supabase.table("dim_pessoas").delete().eq("id_pessoa", id_p).execute()
                         st.success("💀 Alvo erradicado.")
                         st.rerun()
+
+                    # Vínculos Dinâmicos da Pessoa
+                    gerenciar_vinculos_dinamicos("PESSOA", id_p, f"{dados_alvo.get('nome')} ({dados_alvo.get('vulgo') or 'S/V'})")
 
     elif tabela_alvo == "🏠 Fatos":
         opcoes_fatos = list(dic_fatos.keys())
@@ -408,6 +543,9 @@ with aba_gestao:
                         st.success("💀 Evento erradicado.")
                         st.rerun()
 
+                    # Vínculos Dinâmicos do Fato/Ocorrência
+                    gerenciar_vinculos_dinamicos("FATO", id_f, f"{dados_fato.get('tipo_evento')} - {dados_fato.get('bairro_setor')}")
+
     elif tabela_alvo == "🚗 Veículos":
         opcoes_veiculos = list(dic_veiculos.keys())
         if opcoes_veiculos:
@@ -435,6 +573,9 @@ with aba_gestao:
                         supabase.table("dim_veiculos").delete().eq("id_veiculo", id_v).execute()
                         st.success("💀 Veículo erradicado.")
                         st.rerun()
+
+                    # Vínculos Dinâmicos do Veículo
+                    gerenciar_vinculos_dinamicos("VEICULO", id_v, f"{dados_veic.get('placa','S/Placa')} - {dados_veic.get('tipo','')}")
 
 # ----------------- ABA 5: MAPA TÁTICO & LOCALIZAÇÃO -----------------
 with aba_mapa:
